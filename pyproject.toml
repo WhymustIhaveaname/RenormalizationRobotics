@@ -1,0 +1,14 @@
+[project]
+name = "renormalization-robotics"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "mujoco",
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "imageio[ffmpeg]",
+]
+
+[tool.uv]
+package = false

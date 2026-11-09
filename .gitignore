@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 .claude/
 .mcp.json
+exp1_pendulum/results/*.log
+MUJOCO_LOG.TXT
