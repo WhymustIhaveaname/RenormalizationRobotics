@@ -25,16 +25,22 @@ $$
 
 The panel shows 50–1000 Hz, the range a robot simulator actually runs at; the sweep itself goes to 5 kHz.
 
-**The parameters that reproduce the real motion flow linearly with the time step, as predicted.** Fitting $(J, K_P, K_D)$ at each resolution and taking the slope over $h \leq 2.5$ ms:
+### Flow of the effective parameters
+
+![Flow](exp1_pendulum/results/fig1_flow_mujoco.png)
+
+Identified parameters against the physics time step, for the three MuJoCo schemes, on a nearly uniform grid $h$ = 0.25 to 5 ms reached with integer control frequency and decimation. Arms A and C identify a command delay as well; without it they cannot represent the half-step command advance of semi-implicit Euler.
 
 | | identified slope | predicted |
 |---|---|---|
-| $J^\star/J$ | 0.0725 per ms | 0.0712 ($K_D/2J$) |
-| $K_D^\star/K_D$ | 0.0202 per ms | 0.0200 ($K_P/2K_D$) |
+| B: $\Delta J$ | 1.04 per ms ($R^2$ = 0.9996) | 1.00 ($K_D/2$, in $10^{-3}$ kg m²) |
+| B: $\Delta K_D$ | 4.13 per ms ($R^2$ = 0.996) | 4.00 ($K_P/2$, in $10^{-2}$ N m s/rad) |
+| A: $\Delta J$ | 1.17 per ms ($R^2$ = 0.999) | 1.00 |
+| A: command delay | 0.44 per ms ($R^2$ = 0.999) | 0.50 ($h/2$) |
+| C: $\Delta J$ | −0.85 per ms ($R^2$ = 0.998) | −1.00 |
 
-$K_P^\star$ stays within 0.07% of $K_P$ for $f \geq 200$ Hz, as predicted.
-At 200 Hz the inertia that works is 1.37 times the measured one; at 50 Hz, 2.90 times.
-The identified parameters leave these straight lines once $hK_D/J$ exceeds 1, which is where the first-order expansion stops being valid.
+Where the theory predicts no first-order flow, a quadratic fit finds none: $\Delta K_D$ in A and C has $c_1$ = 0.0007 against $c_2$ = 0.0964. The post-fit error is proportional to $h^2$ in every scheme, so three or four effective parameters absorb everything at first order.
+The bare parameters are scheme-dependent — $J + \tfrac{h}{2}K_D$, $J + \tfrac{h}{2}K_D$, $J - \tfrac{h}{2}K_D$ — while the matched behaviour is the same, like counterterms under different regularization schemes.
 
 ### System
 
@@ -79,7 +85,7 @@ $$
 J^\star = J + \tfrac{h}{2}K_D, \qquad K_D^\star = K_D + \tfrac{h}{2}K_P, \qquad K_P^\star = K_P.
 $$
 
-(`common.py` also implements MuJoCo's `Euler` and `implicitfast` schemes, which shift the bare parameters differently; they are not reported here.)
+`common.py` also implements MuJoCo's `Euler` (arm A) and `implicitfast` (arm C) schemes, which shift the bare parameters differently; the flow figure covers all three, the behaviour figure uses RK4.
 
 ### System identification
 
@@ -98,6 +104,48 @@ Gravity breaks the overall scale symmetry $(J, K_P, K_D) \to \lambda(J, K_P, K_D
 
 The pendulum itself: [`exp1_pendulum/results/pendulum.mp4`](exp1_pendulum/results/pendulum.mp4) (ground truth tracking the held command at each of the five drive frequencies in turn, half speed).
 
+## Experiment 2: driven double pendulum, a chaotic system
+
+The same driven link now carries a second, unactuated link. That link is hinged 40% along its own length, so its mass centre sits 3.05 cm from its hinge and gravity barely restores it — the arrangement of a chaotic-pendulum desk toy. It tumbles 14.5 times in 3 s, and a $10^{-9}$ rad perturbation of the initial state grows to $6\times10^{-5}$ rad over the same window (Lyapunov exponent 3.1 /s).
+
+Here the paper's prediction is the multi-body one from its appendix, $\mathbf M^{\mathrm{sim}} = \mathbf M^{\mathrm{real}} + \delta t\,\mathbf K_D$: a constant added to the joint-space inertia, which in MuJoCo is exactly a rotor inertia (`armature`) on the driven joint. The physical joint has none; at 200 Hz the simulator needs 5.0e−3 kg m², which is 7.3% of the joint's own inertia.
+
+### Flow of the effective parameters
+
+![Flow](exp2_double_pendulum/results/fig_flow_mujoco.png)
+
+Fitting (armature, $K_P$, $K_D$), plus a command delay for the two first-order schemes, on a nearly uniform grid $h$ = 1 to 20 ms, each step reached with an integer control frequency and decimation. The three columns are the same MuJoCo schemes as in experiment 1.
+
+| | rotor-inertia slope | predicted | post-fit RMSE vs $h^2$ |
+|---|---|---|---|
+| B: RK4 + explicit PD | 1.02 per ms ($R^2$ = 0.998) | 1.00 ($K_D/2$) | $R^2$ = 0.993 |
+| A: Euler + explicit PD | 2.69 per ms ($R^2$ = 0.984) | 1.00 | $R^2$ = 0.895 |
+| C: implicitfast + native PD | 0.30 per ms ($R^2$ = 0.874) | −1.00 | $R^2$ = 0.889 |
+
+**Only RK4 follows the prediction here**, and it follows it closely: slope 1.02 against 1.00, $\Delta K_D$ 4.32 against 4.00, and a post-fit error proportional to $h^2$. For Euler and implicitfast the identified rotor inertia misses the predicted line, the identified command delay comes out negative instead of $+h/2$, and the post-fit error no longer scales as $h^2$ — at $h$ = 1 ms it is 6.1e−3 rad against RK4's 6.9e−5.
+
+That contrast is the main thing the second link adds. With one joint, everything the simulator omits acts through that joint, and all three schemes could absorb it. With a second, unactuated link, a first-order integrator commits an $O(h)$ error in the mechanism itself, part of it on a joint that carries no PD parameter. Adding a rotor inertia on the free joint as well only takes Euler from 4.4e−3 to 2.7e−3 rad, still 7× worse than what RK4 reaches with the formula alone and no fitting. This is step 4 of the paper's procedure reached from the other side: when the effective parameters stop preserving the behaviour, it is the simulator, not the parameter set, that has to be expanded.
+
+### Behaviour
+
+![Result](exp2_double_pendulum/results/fig_double_pendulum_mujoco.png)
+
+**(a) Chaos turns a parameter error into a lost trajectory.** At 200 Hz the measured-parameter simulation follows the real free link for about 1.7 s and then leaves it for good, ending 40 rad — six turns — away. The renormalized one stays within a few radians through 2.5 s.
+
+**(b) 10× smaller error over the first second, with no fitting**, and the same at every resolution.
+
+**Chaos also raises the price of stopping at first order.** In the single pendulum the analytic formula captured about 90% of the gap between measured and best-fit parameters; here it captures 44%, and fitting buys a further 20×. The residual is the second-order term in $h$, which the Lyapunov exponent amplifies. The formula is still 10× better than the measured parameters and still needs no real-world data, but a chaotic observable is where one would expect to need the next order.
+
+The three pendulums side by side: [`exp2_double_pendulum/results/double_pendulum.mp4`](exp2_double_pendulum/results/double_pendulum.mp4) — real, measured, and renormalized overlaid at quarter speed.
+
+### System and method
+
+Both rods are 1 lb and 1 ft, as in experiment 1. Joint 1 carries the same PD controller ($K_P$ = 80, $K_D$ = 2) at 50 Hz control; joint 2 is free. The command is $\tfrac{\pi}{4}\sin(2\pi \cdot 4\,\mathrm{Hz}\, t)$, whose 19.7 rad/s peak velocity matches experiment 1.
+
+The reference is the exact continuous-time motion under the held command, integrated with DOP853 at `rtol = atol = 1e-12`. Its right-hand side is MuJoCo's own rigid-body dynamics, so the reference and the simulator describe the same mechanism and differ only in time discretization; `sanity_check.py` confirms the joint-space inertia against the analytic value for two rods and checks that the reference is converged.
+
+The error metric is the joint-angle RMSE over the first second. Beyond that, chaos makes trajectory matching meaningless for every parameter set.
+
 ## Reproduce
 
 ```bash
@@ -106,8 +154,18 @@ cd exp1_pendulum
 uv run python sanity_check.py     # MuJoCo model vs ground-truth ODE
 uv run python run_gap.py          # error of each parameter set across resolutions
 uv run python plot_pendulum.py    # the figure
-uv run python run_flow.py         # control-frequency check
+uv run python run_flow.py         # effective parameters on a uniform grid of time steps
+uv run python run_flow.py --delay # same, also identifying the command delay
+uv run python plot_flow.py        # flow figure
 uv run python video.py            # pendulum video (needs EGL)
+
+cd ../exp2_double_pendulum
+uv run python sanity_check.py     # inertia, reference convergence, chaos
+uv run python run_flow.py         # effective parameters on a uniform grid of time steps
+uv run python plot_flow.py        # flow figure
+uv run python run_gap.py          # error of each parameter set across resolutions
+uv run python plot_pendulum.py    # behaviour figure
+uv run python video.py            # three pendulums overlaid (needs EGL)
 ```
 
 ## Roadmap
@@ -115,6 +173,6 @@ uv run python video.py            # pendulum video (needs EGL)
 Each step is one commit, reviewed before the next begins.
 
 - [x] Plan
-- [x] MuJoCo: flow, gap, and the pendulum video
-- [ ] MuJoCo: validation (parameters fitted at one condition, tested at others)
-- [ ] Isaac: the same experiment
+- [x] Experiment 1, MuJoCo: flow, gap, and the pendulum video
+- [x] Experiment 2, MuJoCo: the chaotic double pendulum
+- [ ] Isaac: the same experiments in a second engine

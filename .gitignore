@@ -5,3 +5,4 @@ __pycache__/
 .mcp.json
 exp1_pendulum/results/*.log
 MUJOCO_LOG.TXT
+exp2_double_pendulum/results/*.log
