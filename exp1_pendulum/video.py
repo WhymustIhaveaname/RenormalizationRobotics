@@ -1,4 +1,4 @@
-"""Render the ground-truth pendulum tracking the held 50 Hz command (0.5x speed)."""
+"""Render the ground-truth pendulum for every drive frequency, one after another (0.5x speed)."""
 
 import os
 import sys
@@ -11,7 +11,7 @@ import mujoco
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from common import G, L, M, ground_truth, ref_sequence
+from common import DRIVES, G, L, M, T_END, drive_amplitude, ground_truth, ref_sequence
 
 F_CTRL, DEC = 50, 12  # ground truth sampled at 600 Hz
 FPS, SPEED = 60, 0.5
@@ -44,9 +44,7 @@ XML = f"""
 def main(out):
     model = mujoco.MjModel.from_xml_string(XML)
     data = mujoco.MjData(model)
-    refs = ref_sequence(F_CTRL)
-    theta = np.concatenate([[0.0], ground_truth(refs, F_CTRL, DEC)])
-    stride = round(F_CTRL * DEC * SPEED / FPS)  # GT samples per video frame
+    stride = round(F_CTRL * DEC * SPEED / FPS)  # ground-truth samples per video frame
 
     cam = mujoco.MjvCamera()
     cam.lookat[:] = (0, 0, -0.08)
@@ -55,19 +53,26 @@ def main(out):
 
     with mujoco.Renderer(model, SIZE, SIZE) as renderer, \
             imageio.get_writer(out, fps=FPS, codec="libx264", quality=8) as writer:
-        for i in range(0, len(theta), stride):
-            t = i / (F_CTRL * DEC)
-            r = refs[min(int(t * F_CTRL), len(refs) - 1)]
-            data.qpos[0] = theta[i]
-            data.mocap_quat[0] = (np.cos(r / 2), 0, np.sin(r / 2), 0)
-            mujoco.mj_forward(model, data)
-            renderer.update_scene(data, camera=cam)
-            img = Image.fromarray(renderer.render())
-            draw = ImageDraw.Draw(img)
-            draw.text((20, 18), f"t = {t:4.2f} s   ({SPEED:g}x speed)", fill=(11, 11, 11), font=font)
-            draw.text((20, 50), "orange: real (continuous PD)", fill=(82, 81, 78), font=font)
-            draw.text((20, 80), "blue: command, 50 Hz held", fill=(82, 81, 78), font=font)
-            writer.append_data(np.asarray(img))
+        for f_ref in DRIVES:
+            refs = ref_sequence(F_CTRL, f_ref)
+            theta = np.concatenate([[0.0], ground_truth(refs, F_CTRL, DEC)])
+            for i in range(0, len(theta), stride):
+                t = i / (F_CTRL * DEC)
+                r = refs[min(int(t * F_CTRL), len(refs) - 1)]
+                data.qpos[0] = theta[i]
+                data.mocap_quat[0] = (np.cos(r / 2), 0, np.sin(r / 2), 0)
+                mujoco.mj_forward(model, data)
+                renderer.update_scene(data, camera=cam)
+                img = Image.fromarray(renderer.render())
+                draw = ImageDraw.Draw(img)
+                draw.text((20, 18), f"drive {f_ref:g} Hz, amplitude {drive_amplitude(f_ref):.2f} rad",
+                          fill=(11, 11, 11), font=font)
+                draw.text((20, 50), f"t = {t:4.2f} / {T_END:g} s   ({SPEED:g}x speed)",
+                          fill=(82, 81, 78), font=font)
+                draw.text((20, 82), "orange: real (continuous PD)", fill=(82, 81, 78), font=font)
+                draw.text((20, 112), "blue: command, 50 Hz held", fill=(82, 81, 78), font=font)
+                writer.append_data(np.asarray(img))
+            print(f"rendered drive {f_ref:g} Hz", flush=True)
     print(f"wrote {out}")
 
 

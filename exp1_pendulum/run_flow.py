@@ -56,7 +56,8 @@ def chain(args):
         refs = ref_sequence(f_ctrl)
         gt = ground_truth(refs, f_ctrl, dec)
         t0 = time.perf_counter()
-        fit = identify(sim, refs, f_ctrl, dec, gt, starts_for(arm, h, prev, rng), with_delay=WITH_DELAY)
+        fit = identify(sim, [(refs, gt)], f_ctrl, dec, starts_for(arm, h, prev, rng),
+                       with_delay=WITH_DELAY)
         meas = sim.rollout(refs, f_ctrl, dec, *PARAM0)
         fit["rmse_measured"] = float(np.sqrt(np.mean((meas - gt) ** 2))) if meas is not None else None
         fit.update(arm=arm, f_ctrl_nominal=f_nominal, f_ctrl=f_ctrl, dec=dec, h=h, f=1.0 / h,

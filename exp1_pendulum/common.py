@@ -20,6 +20,9 @@ KD0 = 2.0
 A_REF = np.pi / 2
 F_REF = 2.0
 T_END = 4.0
+# One parameter set must serve every drive frequency, so that identification cannot overfit
+# the response to a single command.
+DRIVES = (0.5, 1.0, 2.0, 4.0, 8.0)
 
 ARMS = ("A", "B", "C")
 ARM_INTEGRATOR = {
@@ -34,8 +37,14 @@ ARM_LABEL = {
 }
 
 
-def ref_sequence(f_ctrl, amp=A_REF, f_ref=F_REF, t_end=T_END):
+def drive_amplitude(f_ref):
+    """Above F_REF the amplitude falls as 1/f, so the peak command velocity stays constant."""
+    return A_REF * min(1.0, F_REF / f_ref)
+
+
+def ref_sequence(f_ctrl, f_ref=F_REF, amp=None, t_end=T_END):
     n = int(round(t_end * f_ctrl))
+    amp = drive_amplitude(f_ref) if amp is None else amp
     return amp * np.sin(2 * np.pi * f_ref * np.arange(n) / f_ctrl)
 
 
@@ -95,8 +104,8 @@ class Sim:
         self.model.opt.integrator = ARM_INTEGRATOR[arm]
         self.data = mujoco.MjData(self.model)
 
-    def rollout(self, refs, f_ctrl, dec, J, kp, kd, delay=0.0):
-        """Theta after each physics step; None if the rollout diverged.
+    def rollout(self, refs, f_ctrl, dec, J, kp, kd, delay=0.0, strict=True):
+        """Theta after each physics step; None if the rollout diverged (unless strict is False).
 
         `delay` (s, may be negative) shifts the held command; each physics step uses the
         command averaged over the step, so delay = 0 reproduces the held command exactly.
@@ -121,9 +130,9 @@ class Sim:
                 d.ctrl[0] = kp * (r - d.qpos[0]) - kd * d.qvel[0]
                 mujoco.mj_step(m, d)
                 out[i] = d.qpos[0]
-        if d.warning[mujoco.mjtWarning.mjWARN_BADQACC].number > 0 or not np.all(np.abs(out) < 1e3):
-            return None
-        return out
+        diverged = (d.warning[mujoco.mjtWarning.mjWARN_BADQACC].number > 0
+                    or not np.all(np.abs(out) < 1e3))
+        return None if (diverged and strict) else out
 
 
 def delayed_command(refs, f_ctrl, dec, delay):
@@ -176,12 +185,25 @@ PARAM0 = np.array([J0, KP0, KD0])
 DIVERGED_RESIDUAL = 10.0  # rad, per sample
 
 
-def identify(sim, refs, f_ctrl, dec, gt, starts, with_delay=False):
+def pooled_rmse(sim, datasets, f_ctrl, dec, params):
+    """RMSE over every dataset at once; None if any rollout diverged."""
+    errs = []
+    for refs, gt in datasets:
+        theta = sim.rollout(refs, f_ctrl, dec, *params)
+        if theta is None:
+            return None
+        errs.append(theta - gt)
+    return float(np.sqrt(np.mean(np.concatenate(errs) ** 2)))
+
+
+def identify(sim, datasets, f_ctrl, dec, starts, with_delay=False):
     """Least-squares fit of (J, K_P, K_D) in log space, plus the command delay in units of h.
 
+    One parameter set is fitted to all `datasets` — each a (refs, ground truth) pair — at once,
+    so it cannot specialize to a single command.
     `starts` are parameter vectors (J, K_P, K_D) or (J, K_P, K_D, delay); returns the best fit.
     """
-    n = len(gt)
+    n = sum(len(gt) for _, gt in datasets)
     h = 1.0 / (f_ctrl * dec)
 
     def unpack(x):
@@ -193,10 +215,12 @@ def identify(sim, refs, f_ctrl, dec, gt, starts, with_delay=False):
         return np.append(x, (p[3] if len(p) > 3 else 0.0) / h) if with_delay else x
 
     def residual(x):
-        th = sim.rollout(refs, f_ctrl, dec, *unpack(x))
-        if th is None:
-            return np.full(n, DIVERGED_RESIDUAL / np.sqrt(n))
-        return (th - gt) / np.sqrt(n)
+        params = unpack(x)
+        errs = []
+        for refs, gt in datasets:
+            theta = sim.rollout(refs, f_ctrl, dec, *params)
+            errs.append(np.full(len(gt), DIVERGED_RESIDUAL) if theta is None else theta - gt)
+        return np.concatenate(errs) / np.sqrt(n)
 
     fits = []
     for p in starts:
