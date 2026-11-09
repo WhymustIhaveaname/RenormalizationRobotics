@@ -146,6 +146,32 @@ The reference is the exact continuous-time motion under the held command, integr
 
 The error metric is the joint-angle RMSE over the first second. Beyond that, chaos makes trajectory matching meaningless for every parameter set.
 
+## Isaac Sim: the same two experiments in PhysX
+
+Both experiments were repeated in Isaac Sim 5.1 against the same reference solution, so the two engines are compared on one ruler. The mechanisms were checked first: the single pendulum's error falls as $1/f$ towards the reference (0.0284 → 0.0149 → 0.0038 → 0.00095 rad at 200, 400, 1600, 6400 Hz), and the double pendulum's unactuated free swing matches the reference to $3\times10^{-4}$ rad over 0.3 s.
+
+**PhysX has no RK4.** Its articulation solver is TGS or PGS, both first-order semi-implicit schemes with constraint iteration; a high-order explicit integrator does not fit that pipeline. The three Isaac arms therefore vary the solver and how the PD force is applied, and all of them are first order:
+
+| | solver | PD |
+|---|---|---|
+| A | TGS | torque from Python each physics step (explicit) |
+| B | TGS | PhysX joint drive (implicit) |
+| C | PGS | PhysX joint drive (implicit) |
+
+![Isaac flow, single pendulum](exp1_pendulum/results/fig_flow_isaac_single.png)
+
+**The scheme dependence reproduces across engines.** With explicit torque the fitted rotor inertia is positive and grows linearly with $h$ (slope 2.41 against the predicted 1.00, $R^2$ = 0.988) and $\Delta K_D$ is close to the prediction (3.62 against 4.00). With the PhysX joint drive the inertia shift turns **negative** (slopes −0.13 and −0.20), the same sign flip MuJoCo showed for its implicit scheme. The direction of the counterterm is a property of the discretization, not of the engine.
+
+**But the first-order formula is worth much less here than in MuJoCo's RK4.** At $h$ = 1 ms the renormalized parameters cut the error by 2.6× with explicit PD, against 36× for MuJoCo with RK4; for the implicit drive they are worse than the measured ones, because the formula pushes the inertia the wrong way. The post-fit error does not scale as $h^2$ in any Isaac arm, so three parameters do not absorb everything at first order.
+
+**The stability rescue survives.** With measured parameters, explicit PD in Isaac diverges at and below 67 Hz, while the renormalized parameters keep the same simulation running and accurate to 5e−2 rad.
+
+For the chaotic double pendulum ([flow figure](exp2_double_pendulum/results/fig_flow_isaac_double.png)) the picture is the one MuJoCo's first-order arms already showed: the explicit-PD inertia slope is near the prediction (1.12 against 1.00) but the gains flow far from it, and the post-fit error is nowhere near $h^2$. PhysX also decorrelates from the reference within 0.5 s, so the fitting window there is 0.3 s rather than the 1 s that RK4 allows.
+
+Videos, rendered with the MuJoCo renderer from Isaac's joint angles so both engines produce the same picture: [single](exp1_pendulum/results/isaac_single.mp4), [double](exp2_double_pendulum/results/isaac_double.mp4).
+
+**What this means for the paper.** The scheme in which the paper's formula is exact — high-order integration of the free dynamics, with only the held PD torque left at first order — is the one MuJoCo offers as RK4 and Isaac does not offer at all. The engine most of robotics actually trains in sits on the side where the first-order formula is a good starting point rather than the whole answer.
+
 ## Reproduce
 
 ```bash
@@ -168,6 +194,18 @@ uv run python plot_pendulum.py    # behaviour figure
 uv run python video.py            # three pendulums overlaid (needs EGL)
 ```
 
+Isaac Sim runs in its own Python 3.11 environment (`isaacsim[all]==5.1.0.0`), with `mujoco`
+installed alongside so that it can call the same reference solution:
+
+```bash
+cd isaac
+$ISAAC_VENV/bin/python run_single.py --arm A   # also B, C
+$ISAAC_VENV/bin/python run_double.py --arm A   # also B, C
+$ISAAC_VENV/bin/python dump_traj.py single     # and double
+uv run python plot_isaac.py --exp single       # figures, in the project venv
+uv run python video_isaac.py --exp single
+```
+
 ## Roadmap
 
 Each step is one commit, reviewed before the next begins.
@@ -175,4 +213,4 @@ Each step is one commit, reviewed before the next begins.
 - [x] Plan
 - [x] Experiment 1, MuJoCo: flow, gap, and the pendulum video
 - [x] Experiment 2, MuJoCo: the chaotic double pendulum
-- [ ] Isaac: the same experiments in a second engine
+- [x] Isaac: the same experiments in a second engine
