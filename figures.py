@@ -62,7 +62,7 @@ def num1(x):
 
 def flow_figure(columns, row_labels, out_paths, h_max, caption, f_ticks,
                 point_colors=None, legend_entries=None, rmse_label="post-fit RMSE (rad)",
-                quadratic=False, show_rmse=True):
+                quadratic=False, show_rmse=True, no_fit=(), row_ylim=None):
     """Parameter flow against the physics time step.
 
     `columns` is one dict per scheme:
@@ -75,6 +75,8 @@ def flow_figure(columns, row_labels, out_paths, h_max, caption, f_ticks,
         groups  optional (n,) keys into `point_colors` for colouring the points
     `row_labels` is the y label of each parameter row; with `show_rmse` a post-fit error row is
     appended below them.
+    Rows listed in `no_fit` get the theory line only: a fit there would suggest a law where
+    the theory says there is none.  `row_ylim` maps a row index to one y range per column.
     With `quadratic`, rows that do have a predicted slope are fitted as c_1 h + c_2 h^2 instead
     of a straight line, so that c_1 can be read against the first-order theory on its own.
     """
@@ -130,10 +132,17 @@ def flow_figure(columns, row_labels, out_paths, h_max, caption, f_ticks,
             else:
                 coef, r2 = poly_fit(h, y, 1)
                 text = f"fit: slope {num(coef[0])}, $R^2$ = {r2:.4f}"
-            ax.plot(h_dense, np.polyval(coef, h_dense), color=FIT_COLOR, lw=2, ls="--", zorder=2,
-                    label=text)
+            if i not in no_fit:
+                ax.plot(h_dense, np.polyval(coef, h_dense), color=FIT_COLOR, lw=2, ls="--",
+                        zorder=2, label=text)
             draw_points(ax, h, y, groups)
-            ax.legend(loc="best", frameon=False, fontsize=9, handlelength=2.2)
+            loc = "best"
+            if row_ylim and i in row_ylim:
+                lo, hi = row_ylim[i][j]
+                ax.set_ylim(lo, hi)
+                # keep the legend out of the half the curve runs through, as "best" does elsewhere
+                loc = "upper left" if hi > -lo else "lower left"
+            ax.legend(loc=loc, frameon=False, fontsize=9, handlelength=2.2)
 
         top = axes[0, j].secondary_xaxis("top")
         top.set_xticks([1e3 / f for f, _ in f_ticks])
@@ -162,8 +171,10 @@ def flow_figure(columns, row_labels, out_paths, h_max, caption, f_ticks,
         fig.legend(dots, [t for t, _ in legend_entries], loc="upper center", ncol=len(dots),
                    frameon=False, fontsize=9, bbox_to_anchor=(0.5, 1.0))
         rect_top = 0.975
+    # Reserve room for however many lines the caption runs to, in figure fractions.
+    bottom = (0.16 * (caption.count("\n") + 1) + 0.06) / (3.45 * n_rows)
     fig.text(0.5, 0.004, caption, ha="center", fontsize=8.5, color=INK2)
-    fig.tight_layout(rect=(0, 0.018, 1, rect_top))
+    fig.tight_layout(rect=(0, bottom, 1, rect_top))
     for p in out_paths:
         fig.savefig(p, dpi=200)
     plt.close(fig)

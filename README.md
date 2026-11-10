@@ -31,7 +31,7 @@ The panel shows 50–1000 Hz, the range a robot simulator actually runs at; the 
 
 Identified parameters against the physics time step, for the three MuJoCo schemes, on a nearly uniform grid $h$ = 0.25 to 5 ms reached with integer control frequency and decimation. Shifts are shown as fractions of the measured value, so the scale is the same in any engine. Arms A and C identify a command delay as well; without it they cannot represent the half-step command advance of semi-implicit Euler.
 
-Each panel is fitted as $c_1 h + c_2 h^2$ through the origin, so the first-order slope $c_1$ can be read against the theory on its own. **Fitting a straight line instead is what makes the theory look wrong**: the raw linear slope of $\Delta J/J$ in arm A is 0.0834, 17% above prediction, purely because a curve is being measured with a ruler.
+Each panel that the theory predicts a flow for is fitted as $c_1 h + c_2 h^2$ through the origin, so the first-order slope $c_1$ can be read against the theory on its own. **Fitting a straight line instead is what makes the theory look wrong**: the raw linear slope of $\Delta J/J$ in arm A is 0.0834, 17% above prediction, purely because a curve is being measured with a ruler.
 
 | | $c_1$ identified | $c_1$ predicted | error |
 |---|---|---|---|
@@ -50,7 +50,18 @@ $$J_e = J \mp \frac{h K_D}{2} - h^2 \frac{J K_P + K_D^2}{12 J}, \qquad K_{P,e} =
 
 so the identified damping must curve upward as $\Delta K_D = + h^2 K_P K_D / 12 J$. The $K_D$ row of A and C draws that parabola: predicted $c_2$ = 4.75e−4 per ms², identified 4.82e−4, a 1.6% error with no fitted scale. Feeding these effective parameters to an exact integrator drops the error from $O(h^2)$ to $O(h^3)$, confirming the derivation.
 
-What is left over at $O(h^2)$ after projecting onto the three tunable operators is $-c\left[\cos\theta \left(K_P(\theta - r) + c\sin\theta\right) + J\dot\theta^2\sin\theta\right] / 12 J^2$, proportional to the gravity torque $c = mgl/2$. **A linear plant stays exactly renormalizable at second order**; only the gravitational nonlinearity obstructs it, and the $\Delta K_P$ row is where that obstruction shows up.
+What is left over at $O(h^2)$ after projecting onto the three tunable operators is $-c\left[\cos\theta \left(K_P(\theta - r) + c\sin\theta\right) + J\dot\theta^2\sin\theta\right] / 12 J^2$, proportional to the gravity torque $c = mgl/2$. **A linear plant stays exactly renormalizable at second order**; only the gravitational nonlinearity obstructs it.
+
+**$K_P$ does not flow, and its row is where the obstruction lands.** The derivation gives $K_{P,e} = K_P$ exactly to second order, so the $K_P$ row is drawn unfitted, on the same scale its own scheme's $\Delta J/J$ uses, where it is a flat line. The scatter visible once that row is magnified is not a flow but the least-squares projection of the unrepresentable remainder, and it moves with the command rather than with $h$. Holding $h$ = 5 ms and changing only the command:
+
+| | $\Delta J/J \div h^2$ | $\Delta K_D/K_D \div h^2$ | $\Delta K_P/K_P \div h^2$ |
+|---|---|---|---|
+| $f_\mathrm{ctrl} \times$ dec = 10×20 → 200×1 | 0.0166 throughout | 4.80e−4 → 4.66e−4 | +3.0e−6 → **−9.6e−6** |
+| drive 0.5 → 8 Hz | 0.0166 throughout | 4.78e−4 → 4.79e−4 | −2.2e−6 → **+6.4e−7** |
+| amplitude 0.05π → 1.0π | 0.0166 throughout | 4.78e−4 → 5.16e−4 | −1.5e−7 → **+4.9e−5** |
+| fitting window 1 s → 4 s | 0.0166 throughout | 4.66e−4 → 4.81e−4 | −9.6e−6 → **+1.04e−5** |
+
+$J$ and $K_D$ are counterterms: they are inside the span, so they do not care what the command is. $\Delta K_P$ changes sign four different ways, grows with amplitude as the gravitational obstruction should, and is three orders of magnitude smaller than $\Delta J/J$ anyway.
 
 ### System
 

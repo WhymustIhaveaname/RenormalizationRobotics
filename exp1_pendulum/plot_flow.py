@@ -35,17 +35,17 @@ ROWS = RELATIVE
 
 HEAD = ("Target $h$ = 0.25, 0.5, ..., 5 ms ($f$ = 200-4000 Hz), realized with integer "
         "$f_\\mathrm{ctrl}$ (Hz) and integer decimation, within 2.3% of the target.\n")
-CAPTION = (HEAD + "Theory (solid), first order except the $K_D$ row of A and C, which "
-                "carries the derived $h^2$ counterterm $K_P K_D / 12 J$; fit (dashed), "
-                "$c_1 h + c_2 h^2$ through the origin, so that $c_1$ is the measured first-order "
-           "slope and $c_2$ absorbs the leading correction.")
+CAPTION = (HEAD + "Theory (solid), first order except the $K_D$ row of A and C, which carries "
+           "the derived $h^2$ counterterm $K_P K_D / 12 J$.\n"
+           "Fit (dashed): $c_1 h + c_2 h^2$ through the origin, so $c_1$ is the measured "
+           "first-order slope.")
 
 
 def load(name):
     return json.loads((RESULTS / name).read_text())
 
 
-KD_ROW = 2  # the only row whose second-order counterterm has been derived and checked
+KD_ROW, KP_ROW = 2, 2  # row index into the parameter vector / into the figure's rows
 
 
 def column(arm, rows, with_delay, second_order=False):
@@ -78,10 +78,19 @@ def main(absolute=False):
     sources = {"A": (delay, True), "B": (plain, False), "C": (delay, True)}
     columns = [column(arm, *sources[arm], second_order=True) for arm in ARMS]
     stem = "fig1_flow_mujoco_absolute" if absolute else "fig1_flow_mujoco"
+    # Show K_P on the scale the same scheme's J moves on, sign included, where it is a flat line.
+    ranges = []
+    for col in columns:
+        y = np.asarray(col["rows"][0][0])
+        lo, hi = min(0.0, y.min()), max(0.0, y.max())
+        pad = 0.05 * (hi - lo)
+        ranges.append((lo - pad, hi + pad))
+    ylim = None if absolute else {KP_ROW: ranges}
     flow_figure(columns, [label for _, label, _ in ROWS],
                 [RESULTS / f"{stem}.{e}" for e in ("png", "pdf")],
                 H_MAX, CAPTION, F_TICKS,
                 point_colors=F_CTRL_COLOR, quadratic=True, show_rmse=False,
+                no_fit=() if absolute else (KP_ROW,), row_ylim=ylim,
                 legend_entries=[(rf"$f_\mathrm{{ctrl}} \approx$ {fc} Hz", c)
                                 for fc, c in F_CTRL_COLOR.items()])
     print("wrote", RESULTS / f"{stem}.png")
