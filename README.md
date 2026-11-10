@@ -29,18 +29,28 @@ The panel shows 50–1000 Hz, the range a robot simulator actually runs at; the 
 
 ![Flow](exp1_pendulum/results/fig1_flow_mujoco.png)
 
-Identified parameters against the physics time step, for the three MuJoCo schemes, on a nearly uniform grid $h$ = 0.25 to 5 ms reached with integer control frequency and decimation. Arms A and C identify a command delay as well; without it they cannot represent the half-step command advance of semi-implicit Euler.
+Identified parameters against the physics time step, for the three MuJoCo schemes, on a nearly uniform grid $h$ = 0.25 to 5 ms reached with integer control frequency and decimation. Shifts are shown as fractions of the measured value, so the scale is the same in any engine. Arms A and C identify a command delay as well; without it they cannot represent the half-step command advance of semi-implicit Euler.
 
-| | identified slope | predicted |
-|---|---|---|
-| B: $\Delta J$ | 1.04 per ms ($R^2$ = 0.9996) | 1.00 ($K_D/2$, in $10^{-3}$ kg m²) |
-| B: $\Delta K_D$ | 4.13 per ms ($R^2$ = 0.996) | 4.00 ($K_P/2$, in $10^{-2}$ N m s/rad) |
-| A: $\Delta J$ | 1.17 per ms ($R^2$ = 0.999) | 1.00 |
-| A: command delay | 0.44 per ms ($R^2$ = 0.999) | 0.50 ($h/2$) |
-| C: $\Delta J$ | −0.85 per ms ($R^2$ = 0.998) | −1.00 |
+Each panel is fitted as $c_1 h + c_2 h^2$ through the origin, so the first-order slope $c_1$ can be read against the theory on its own. **Fitting a straight line instead is what makes the theory look wrong**: the raw linear slope of $\Delta J/J$ in arm A is 0.0834, 17% above prediction, purely because a curve is being measured with a ruler.
 
-Where the theory predicts no first-order flow, a quadratic fit finds none: $\Delta K_D$ in A and C has $c_1$ = 0.0007 against $c_2$ = 0.0964. The post-fit error is proportional to $h^2$ in every scheme, so three or four effective parameters absorb everything at first order.
+| | $c_1$ identified | $c_1$ predicted | error |
+|---|---|---|---|
+| A: $\Delta J/J$ | 0.0708 per ms | 0.0712 ($K_D/2J$) | −0.5% |
+| B: $\Delta J/J$ | 0.0709 per ms | 0.0712 | −0.4% |
+| C: $\Delta J/J$ | −0.0708 per ms | −0.0712 | −0.5% |
+| B: $\Delta K_D/K_D$ | 0.0198 per ms | 0.0200 ($K_P/2K_D$) | −1% |
+| A, C: command delay | 0.50 per ms | 0.50 ($h/2$) | −0.03% |
+| A, C: $\Delta K_D/K_D$ | 1.8e−6 per ms | 0 | — |
+
 The bare inertia is scheme-dependent — $J + hK_D/2$ for both explicit-PD schemes (Euler and RK4) but $J - hK_D/2$ for implicitfast — while the matched behaviour is the same, like counterterms under different regularization schemes.
+
+**Second order.** Backward error analysis of the step map gives the continuous system each integrator is really solving. For semi-implicit Euler with an explicit PD torque (A) and for implicit damping (C), which is the same map with $J \to J + hK_D$:
+
+$$J_e = J \mp \frac{h K_D}{2} - h^2 \frac{J K_P + K_D^2}{12 J}, \qquad K_{P,e} = K_P, \qquad K_{D,e} = K_D - h^2 \frac{K_P K_D}{12 J}$$
+
+so the identified damping must curve upward as $\Delta K_D = + h^2 K_P K_D / 12 J$. The $K_D$ row of A and C draws that parabola: predicted $c_2$ = 4.75e−4 per ms², identified 4.82e−4, a 1.6% error with no fitted scale. Feeding these effective parameters to an exact integrator drops the error from $O(h^2)$ to $O(h^3)$, confirming the derivation.
+
+What is left over at $O(h^2)$ after projecting onto the three tunable operators is $-c\left[\cos\theta \left(K_P(\theta - r) + c\sin\theta\right) + J\dot\theta^2\sin\theta\right] / 12 J^2$, proportional to the gravity torque $c = mgl/2$. **A linear plant stays exactly renormalizable at second order**; only the gravitational nonlinearity obstructs it, and the $\Delta K_P$ row is where that obstruction shows up.
 
 ### System
 

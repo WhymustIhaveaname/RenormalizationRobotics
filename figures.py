@@ -36,20 +36,49 @@ def poly_fit(x, y, deg):
     return coef, r2
 
 
+def poly_fit_origin(x, y, deg):
+    """Least-squares polynomial with no constant term, since no shift survives at h = 0.
+    Returns coefficients from highest degree down (the constant is 0), and R^2."""
+    coef = np.linalg.lstsq(np.stack([x ** k for k in range(deg, 0, -1)], 1), y, rcond=None)[0]
+    coef = np.append(coef, 0.0)
+    r2 = 1 - np.sum((y - np.polyval(coef, x)) ** 2) / np.sum((y - y.mean()) ** 2)
+    return coef, r2
+
+
+def num(x):
+    """Legend number: two decimals for ordinary values, three significant digits for small ones,
+    so that relative shifts (~0.07) stay as readable as absolute ones (~1.04)."""
+    return "0" if x == 0 else f"{x:.2f}" if abs(x) >= 0.1 else f"{x:.3g}"
+
+
+def num1(x):
+    """One significant digit, for a coefficient the theory says should vanish: it only has to be
+    seen to be small, and the short form leaves room for the coefficient that does matter."""
+    if x == 0:
+        return "0"
+    mantissa, exponent = f"{x:.0e}".split("e")
+    return f"{mantissa}e{int(exponent)}"
+
+
 def flow_figure(columns, row_labels, out_paths, h_max, caption, f_ticks,
-                point_colors=None, legend_entries=None, rmse_label="post-fit RMSE (rad)"):
+                point_colors=None, legend_entries=None, rmse_label="post-fit RMSE (rad)",
+                quadratic=False, show_rmse=True):
     """Parameter flow against the physics time step.
 
     `columns` is one dict per scheme:
         title   two-line column heading
         h       (n,) time steps in ms
         rows    list, one per parameter row, of either None (not fitted in this scheme) or
-                (values in display units, theoretical slope per ms)
+                (values in display units, theory), where theory is the slope per ms or a pair
+                (slope per ms, curvature per ms^2) when a second-order prediction is known
         rmse    (n,) post-fit RMSE
         groups  optional (n,) keys into `point_colors` for colouring the points
-    `row_labels` is the y label of each parameter row; the last row is always the post-fit error.
+    `row_labels` is the y label of each parameter row; with `show_rmse` a post-fit error row is
+    appended below them.
+    With `quadratic`, rows that do have a predicted slope are fitted as c_1 h + c_2 h^2 instead
+    of a straight line, so that c_1 can be read against the first-order theory on its own.
     """
-    n_rows = len(row_labels) + 1
+    n_rows = len(row_labels) + bool(show_rmse)
     fig, axes = plt.subplots(n_rows, 3, figsize=(13, 3.45 * n_rows))
     h_line = np.array([0, h_max])
     h_dense = np.linspace(0, h_max, 200)
@@ -81,17 +110,26 @@ def flow_figure(columns, row_labels, out_paths, h_max, caption, f_ticks,
                         va="center", transform=ax.transAxes, color=INK2, fontsize=9)
                 ax.set_yticks([])
                 continue
-            y, theory = np.asarray(entry[0]), entry[1]
+            y = np.asarray(entry[0])
+            t1, t2 = (entry[1], 0.0) if np.isscalar(entry[1]) else entry[1]
             ax.axhline(0, color=GRID, lw=1, zorder=0)
-            ax.plot(h_line, theory * h_line, color=INK, lw=1.4, zorder=1,
-                    label=f"theory: slope {theory:.2f}")
-            if theory == 0:  # no first-order flow predicted: a quadratic exposes the h^2 term
+            ax.plot(h_dense if t2 else h_line, np.polyval([t2, t1, 0], h_dense if t2 else h_line),
+                    color=INK, lw=1.4, zorder=1,
+                    label=(f"theory: $c_1$ = {num(t1)}, $c_2$ = {num(t2)}" if t2
+                           else f"theory: slope {num(t1)}"))
+            theory = t1
+            if t1 == 0 and t2 == 0:  # nothing predicted: a free quadratic exposes the h^2 term
                 coef, r2 = poly_fit(h, y, 2)
                 text = (f"fit: $c_0 + c_1 h + c_2 h^2$, $R^2$ = {r2:.4f}\n"
-                        f"$c_0$ = {coef[2]:.4f}, $c_1$ = {coef[1]:.4f}, $c_2$ = {coef[0]:.4f}")
+                        f"$c_0$ = {num1(coef[2])}, $c_1$ = {num1(coef[1])}, "
+                        f"$c_2$ = {num(coef[0])}")
+            elif quadratic:  # separate the predicted slope from the leading correction to it
+                coef, r2 = poly_fit_origin(h, y, 2)
+                text = (f"fit: $c_1 h + c_2 h^2$, $R^2$ = {r2:.4f}\n"
+                        f"$c_1$ = {num(coef[1])}, $c_2$ = {num(coef[0])}")
             else:
                 coef, r2 = poly_fit(h, y, 1)
-                text = f"fit: slope {coef[0]:.2f}, $R^2$ = {r2:.4f}"
+                text = f"fit: slope {num(coef[0])}, $R^2$ = {r2:.4f}"
             ax.plot(h_dense, np.polyval(coef, h_dense), color=FIT_COLOR, lw=2, ls="--", zorder=2,
                     label=text)
             draw_points(ax, h, y, groups)
@@ -102,6 +140,8 @@ def flow_figure(columns, row_labels, out_paths, h_max, caption, f_ticks,
         top.set_xticklabels([t for _, t in f_ticks], fontsize=8, color=INK2)
         top.set_xlabel("$f$ (Hz)", fontsize=8, color=INK2, labelpad=2)
 
+        if not show_rmse:
+            continue
         # Post-fit error: all first-order effects absorbed means RMSE should scale as h^2.
         ax = axes[-1, j]
         draw_points(ax, h**2, np.asarray(col["rmse"]), groups)

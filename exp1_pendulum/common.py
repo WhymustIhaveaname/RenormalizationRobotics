@@ -181,6 +181,18 @@ def first_order_prediction_delay(arm, h):
     return J0 - h / 2 * KD0, KP0, KD0, h / 2
 
 
+def second_order_shift(arm, h):
+    """h^2 part of (J*, K_P*, K_D*), from backward error analysis of the step map.
+
+    Semi-implicit Euler with an explicit PD torque (A) and implicit damping (C) have the same
+    second-order counterterms; only their h^1 inertia shift differs in sign.  RK4 (B) is not
+    covered.  Verified numerically: adding these drops the one-step error from h^2 to h^3.
+    """
+    if arm == "B":
+        return None
+    return np.array([(J0 * KP0 + KD0**2) / (12 * J0), 0.0, KP0 * KD0 / (12 * J0)]) * h**2
+
+
 PARAM0 = np.array([J0, KP0, KD0])
 DIVERGED_RESIDUAL = 10.0  # rad, per sample
 

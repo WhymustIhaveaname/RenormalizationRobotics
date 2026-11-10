@@ -8,6 +8,7 @@ dependencies = [
     "scipy",
     "matplotlib",
     "imageio[ffmpeg]",
+    "sympy",
 ]
 
 [tool.uv]
