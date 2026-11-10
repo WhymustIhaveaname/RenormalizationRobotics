@@ -6,9 +6,9 @@ The paper argues that simulator parameters should be treated as effective, resol
 Its analytic example is PD control at a finite simulation frequency, where a small effective delay $\delta t \propto 1/f$ shifts the parameters that make the simulator reproduce the real motion:
 
 $$
-K_D^{\mathrm{sim}} = K_D^{\mathrm{real}} + \delta t\,K_P^{\mathrm{real}},
+K_D^{\mathrm{sim}} = K_D^{\mathrm{real}} + \delta t \cdot K_P^{\mathrm{real}},
 \qquad
-J^{\mathrm{sim}} = J^{\mathrm{measured}} + \delta t\,K_D^{\mathrm{real}}.
+J^{\mathrm{sim}} = J^{\mathrm{measured}} + \delta t \cdot K_D^{\mathrm{real}}.
 $$
 
 ## Experiment 1: PD-controlled pendulum at finite simulation frequency
@@ -40,7 +40,7 @@ Identified parameters against the physics time step, for the three MuJoCo scheme
 | C: $\Delta J$ | −0.85 per ms ($R^2$ = 0.998) | −1.00 |
 
 Where the theory predicts no first-order flow, a quadratic fit finds none: $\Delta K_D$ in A and C has $c_1$ = 0.0007 against $c_2$ = 0.0964. The post-fit error is proportional to $h^2$ in every scheme, so three or four effective parameters absorb everything at first order.
-The bare parameters are scheme-dependent — $J + \tfrac{h}{2}K_D$, $J + \tfrac{h}{2}K_D$, $J - \tfrac{h}{2}K_D$ — while the matched behaviour is the same, like counterterms under different regularization schemes.
+The bare inertia is scheme-dependent — $J + hK_D/2$ for both explicit-PD schemes (Euler and RK4) but $J - hK_D/2$ for implicitfast — while the matched behaviour is the same, like counterterms under different regularization schemes.
 
 ### System
 
@@ -70,7 +70,7 @@ The control frequency is fixed at 50 Hz and only the decimation varies, so every
 On a real robot the actuator PD loop runs at kHz rates, so the real system is continuous-time PD under the held command:
 
 $$
-J\ddot\theta = -\tfrac{1}{2}mgl\sin\theta + K_P(\theta_{\mathrm{ref},k} - \theta) - K_D\dot\theta,
+J\ddot\theta = -\frac{1}{2} m g l \sin\theta + K_P(\theta_{\mathrm{ref},k} - \theta) - K_D\dot\theta,
 \qquad t \in [t_k, t_{k+1}).
 $$
 
@@ -82,7 +82,7 @@ MuJoCo with the `RK4` integrator; the PD torque is computed in Python from the c
 Holding the torque delays both feedback terms by half a step on average, which is exactly the paper's model with $\delta t = h/2$, so the predictions are
 
 $$
-J^\star = J + \tfrac{h}{2}K_D, \qquad K_D^\star = K_D + \tfrac{h}{2}K_P, \qquad K_P^\star = K_P.
+J^\star = J + \frac{h}{2} K_D, \qquad K_D^\star = K_D + \frac{h}{2} K_P, \qquad K_P^\star = K_P.
 $$
 
 `common.py` also implements MuJoCo's `Euler` (arm A) and `implicitfast` (arm C) schemes, which shift the bare parameters differently; the flow figure covers all three, the behaviour figure uses RK4.
@@ -108,7 +108,7 @@ The pendulum itself: [`exp1_pendulum/results/pendulum.mp4`](exp1_pendulum/result
 
 The same driven link now carries a second, unactuated link. That link is hinged 40% along its own length, so its mass centre sits 3.05 cm from its hinge and gravity barely restores it — the arrangement of a chaotic-pendulum desk toy. It tumbles 14.5 times in 3 s, and a $10^{-9}$ rad perturbation of the initial state grows to $6\times10^{-5}$ rad over the same window (Lyapunov exponent 3.1 /s).
 
-Here the paper's prediction is the multi-body one from its appendix, $\mathbf M^{\mathrm{sim}} = \mathbf M^{\mathrm{real}} + \delta t\,\mathbf K_D$: a constant added to the joint-space inertia, which in MuJoCo is exactly a rotor inertia (`armature`) on the driven joint. The physical joint has none; at 200 Hz the simulator needs 5.0e−3 kg m², which is 7.3% of the joint's own inertia.
+Here the paper's prediction is the multi-body one from its appendix, $\mathbf M^{\mathrm{sim}} = \mathbf M^{\mathrm{real}} + \delta t \cdot \mathbf K_D$: a constant added to the joint-space inertia, which in MuJoCo is exactly a rotor inertia (`armature`) on the driven joint. The physical joint has none; at 200 Hz the simulator needs 5.0e−3 kg m², which is 7.3% of the joint's own inertia.
 
 ### Flow of the effective parameters
 
@@ -140,7 +140,7 @@ The three pendulums side by side: [`exp2_double_pendulum/results/double_pendulum
 
 ### System and method
 
-Both rods are 1 lb and 1 ft, as in experiment 1. Joint 1 carries the same PD controller ($K_P$ = 80, $K_D$ = 2) at 50 Hz control; joint 2 is free. The command is $\tfrac{\pi}{4}\sin(2\pi \cdot 4\,\mathrm{Hz}\, t)$, whose 19.7 rad/s peak velocity matches experiment 1.
+Both rods are 1 lb and 1 ft, as in experiment 1. Joint 1 carries the same PD controller ($K_P$ = 80, $K_D$ = 2) at 50 Hz control; joint 2 is free. The command is $(\pi/4)\sin(2\pi \cdot 4\ \text{Hz} \cdot t)$, whose 19.7 rad/s peak velocity matches experiment 1.
 
 The reference is the exact continuous-time motion under the held command, integrated with DOP853 at `rtol = atol = 1e-12`. Its right-hand side is MuJoCo's own rigid-body dynamics, so the reference and the simulator describe the same mechanism and differ only in time discretization; `sanity_check.py` confirms the joint-space inertia against the analytic value for two rods and checks that the reference is converged.
 
