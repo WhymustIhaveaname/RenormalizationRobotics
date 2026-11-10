@@ -96,6 +96,24 @@ def build_scene(n_envs, arm, spacing=1.0):
     return Articulation(prim_paths_expr="/World/env.*", name="pendulums")
 
 
+def delayed_command(refs, f_ctrl, dec, delays):
+    """Per-environment command: average of the held r(t - delay) over each physics step.
+
+    `delays` is one value per environment (seconds, may be negative); returns
+    (n_envs, len(refs) * dec). delay = 0 reproduces the held command exactly.
+    """
+    T = 1.0 / f_ctrl
+    h = T / dec
+    cum = np.concatenate([[0.0], np.cumsum(refs) * T])
+
+    def integral(t):
+        k = np.clip(np.floor(t / T).astype(int), 0, len(refs) - 1)
+        return np.where(t < 0, refs[0] * t, cum[k] + refs[k] * (t - k * T))
+
+    t0 = np.arange(len(refs) * dec)[None, :] * h - np.asarray(delays, float)[:, None]
+    return (integral(t0 + h) - integral(t0)) / h
+
+
 class IsaacPendulum:
     """Steps n_envs copies of the pendulum, one parameter set per environment."""
 
@@ -138,10 +156,15 @@ class IsaacPendulum:
         self.view.set_joint_positions(zeros)
         self.view.set_joint_velocities(zeros)
         k_rows = k
+        delays = p[:, 3] if p.shape[1] > 3 else None
+        cmd = (None if delays is None or not np.any(delays)
+               else delayed_command(refs, f_ctrl, dec, delays).astype(np.float32))
         out = np.empty((self.n, len(refs)))
         for k, r in enumerate(refs):
             target = np.full((self.n, 1), r, dtype=np.float32)
-            for _ in range(dec):
+            for j in range(dec):
+                if cmd is not None:
+                    target = cmd[:, k * dec + j][:, None]
                 if self.arm == "A":
                     q = self.view.get_joint_positions()
                     v = self.view.get_joint_velocities()

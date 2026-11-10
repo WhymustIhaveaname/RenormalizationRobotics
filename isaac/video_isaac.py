@@ -6,7 +6,6 @@ Run in the project venv:  python video_isaac.py --exp single|double
 
 import argparse
 import os
-import sys
 from pathlib import Path
 
 os.environ.setdefault("MUJOCO_GL", "egl")

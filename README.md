@@ -146,31 +146,50 @@ The reference is the exact continuous-time motion under the held command, integr
 
 The error metric is the joint-angle RMSE over the first second. Beyond that, chaos makes trajectory matching meaningless for every parameter set.
 
-## Isaac Sim: the same two experiments in PhysX
+## Isaac Sim: the single pendulum in PhysX
 
-Both experiments were repeated in Isaac Sim 5.1 against the same reference solution, so the two engines are compared on one ruler. The mechanisms were checked first: the single pendulum's error falls as $1/f$ towards the reference (0.0284 → 0.0149 → 0.0038 → 0.00095 rad at 200, 400, 1600, 6400 Hz), and the double pendulum's unactuated free swing matches the reference to $3\times10^{-4}$ rad over 0.3 s.
+Experiment 1 repeated in Isaac Sim 5.1 against the same reference solution, on the same $h$ grid, drawn by the same code (`figures.py`), so the two engines are directly comparable.
 
-**PhysX has no RK4.** Its articulation solver is TGS or PGS, both first-order semi-implicit schemes with constraint iteration; a high-order explicit integrator does not fit that pipeline. The three Isaac arms therefore vary the solver and how the PD force is applied, and all of them are first order:
+**PhysX has no RK4.** Its articulation solver offers only `TGS` and `PGS`, both first-order schemes with constraint iteration; a high-order explicit integrator does not fit a pipeline built around solving contacts and constraints each step. The three Isaac schemes therefore vary the solver and how the PD force is applied:
 
-| | solver | PD |
+| | solver | PD force |
 |---|---|---|
-| A | TGS | torque from Python each physics step (explicit) |
-| B | TGS | PhysX joint drive (implicit) |
-| C | PGS | PhysX joint drive (implicit) |
+| explicit PD + TGS | TGS | torque computed in Python each physics step, as legged_gym does |
+| PhysX drive + TGS | TGS | PhysX joint drive, damping implicit in the end-of-step velocity |
+| PhysX drive + PGS | PGS | the same implicit drive |
 
-![Isaac flow, single pendulum](exp1_pendulum/results/fig_flow_isaac_single.png)
+The model is validated first: the simulated error falls as $1/f$ towards the reference — 0.0284, 0.0149, 0.0038, 0.00095 rad at 200, 400, 1600, 6400 Hz — so Isaac and MuJoCo describe the same mechanism.
 
-**The scheme dependence reproduces across engines.** With explicit torque the fitted rotor inertia is positive and grows linearly with $h$ (slope 2.41 against the predicted 1.00, $R^2$ = 0.988) and $\Delta K_D$ is close to the prediction (3.62 against 4.00). With the PhysX joint drive the inertia shift turns **negative** (slopes −0.13 and −0.20), the same sign flip MuJoCo showed for its implicit scheme. The direction of the counterterm is a property of the discretization, not of the engine.
+### Flow of the effective parameters
 
-**But the first-order formula is worth much less here than in MuJoCo's RK4.** At $h$ = 1 ms the renormalized parameters cut the error by 2.6× with explicit PD, against 36× for MuJoCo with RK4; for the implicit drive they are worse than the measured ones, because the formula pushes the inertia the wrong way. The post-fit error does not scale as $h^2$ in any Isaac arm, so three parameters do not absorb everything at first order.
+![Isaac flow](exp1_pendulum/results/fig_flow_isaac_single.png)
 
-**The stability rescue survives.** With measured parameters, explicit PD in Isaac diverges at and below 67 Hz, while the renormalized parameters keep the same simulation running and accurate to 5e−2 rad.
+Four parameters are fitted: a rotor inertia on the joint (the physical joint has none, so this plays the role of $\Delta J$), $K_P$, $K_D$, and a command delay.
 
-For the chaotic double pendulum ([flow figure](exp2_double_pendulum/results/fig_flow_isaac_double.png)) the picture is the one MuJoCo's first-order arms already showed: the explicit-PD inertia slope is near the prediction (1.12 against 1.00) but the gains flow far from it, and the post-fit error is nowhere near $h^2$. PhysX also decorrelates from the reference within 0.5 s, so the fitting window there is 0.3 s rather than the 1 s that RK4 allows.
+| | rotor-inertia slope | command-delay slope |
+|---|---|---|
+| explicit PD + TGS | **+1.02** ($R^2$ = 0.9999) | **0.51** ($R^2$ = 0.9998) |
+| PhysX drive + TGS | −0.07 | 0.02 |
+| PhysX drive + PGS | **−0.86** ($R^2$ = 0.997) | **0.44** ($R^2$ = 0.999) |
+| predicted | 1.00 ($K_D/2$) | 0.50 ($h/2$) |
 
-Videos, rendered with the MuJoCo renderer from Isaac's joint angles so both engines produce the same picture: [single](exp1_pendulum/results/isaac_single.mp4), [double](exp2_double_pendulum/results/isaac_double.mp4).
+**The counterterm is a property of the discretization, not of the engine.** With explicit torque, Isaac lands on the paper's prediction to 2%, in a different engine with a different solver. With the implicit PhysX drive under PGS the inertia shift turns negative, which is the same sign flip MuJoCo showed for `implicitfast`: implicit damping is algebraically identical to explicit damping with $J \to J + hK_D$, so the counterterm has to subtract it back.
 
-**What this means for the paper.** The scheme in which the paper's formula is exact — high-order integration of the free dynamics, with only the held PD torque left at first order — is the one MuJoCo offers as RK4 and Isaac does not offer at all. The engine most of robotics actually trains in sits on the side where the first-order formula is a good starting point rather than the whole answer.
+TGS with the implicit drive lands on neither: it re-linearizes several times within a step, which already removes most of the shift. That also makes it the most accurate scheme out of the box — its measured-parameter error at $h$ = 1 ms is 1.8e−4 rad, 31× below PGS.
+
+$\Delta K_D$ and $\Delta K_P$ are predicted not to flow at first order and do not: their linear coefficients are at the 1e−1 and 1e−2 level against $K_D$ = 2 and $K_P$ = 80, and the fits are almost purely quadratic.
+
+### Behaviour
+
+![Isaac behaviour](exp1_pendulum/results/fig_behaviour_isaac_single.png)
+
+With the predicted parameters, and no fitting at all, the error at 200 Hz drops 22× and at 1 kHz 182×. Below 110 Hz the measured parameters diverge outright while the renormalized ones keep running — the same stability rescue MuJoCo showed.
+
+The video, rendered with the MuJoCo renderer from Isaac's joint angles so both engines produce the same picture: [`exp1_pendulum/results/isaac_single.mp4`](exp1_pendulum/results/isaac_single.mp4).
+
+### Where the first order is not enough
+
+The post-fit error does not fall as $h^2$ in any Isaac scheme, so four parameters still leave an $O(h)$ residual — unlike MuJoCo's RK4, where three sufficed. That is consistent with every PhysX scheme being first order in the free dynamics as well as in the PD: there is a second omitted effect that these operators cannot represent.
 
 ## Reproduce
 
@@ -195,16 +214,24 @@ uv run python video.py            # three pendulums overlaid (needs EGL)
 ```
 
 Isaac Sim runs in its own Python 3.11 environment (`isaacsim[all]==5.1.0.0`), with `mujoco`
-installed alongside so that it can call the same reference solution:
+installed alongside so that it can call the same reference solution. Its figures are drawn by
+the same `figures.py` as the MuJoCo ones, so the two cannot drift apart.
 
 ```bash
 cd isaac
-$ISAAC_VENV/bin/python run_single.py --arm A   # also B, C
-$ISAAC_VENV/bin/python run_double.py --arm A   # also B, C
-$ISAAC_VENV/bin/python dump_traj.py single     # and double
-uv run python plot_isaac.py --exp single       # figures, in the project venv
+# flow: the MuJoCo grid, one 2 Hz command, as exp1/run_flow.py uses
+$ISAAC_VENV/bin/python run_single.py --arm A --delay --points 8 \
+    --h-min 0.25 --h-max 5 --single-drive          # also --arm B, C
+# behaviour: five commands over f = 50-1000 Hz, as exp1/run_gap.py uses
+$ISAAC_VENV/bin/python run_single.py --arm A --delay --points 8 --h-min 1 --h-max 20
+$ISAAC_VENV/bin/python dump_traj.py single
+uv run python plot_isaac_flow.py        # figures, in the project venv
+uv run python plot_isaac_behaviour.py
 uv run python video_isaac.py --exp single
 ```
+
+`double_isaac.py` and `run_double.py` hold a validated Isaac model of the chaotic double
+pendulum; that experiment has not been run to completion yet.
 
 ## Roadmap
 
@@ -213,4 +240,5 @@ Each step is one commit, reviewed before the next begins.
 - [x] Plan
 - [x] Experiment 1, MuJoCo: flow, gap, and the pendulum video
 - [x] Experiment 2, MuJoCo: the chaotic double pendulum
-- [x] Isaac: the same experiments in a second engine
+- [x] Isaac, experiment 1: the single pendulum in PhysX
+- [ ] Isaac, experiment 2: the chaotic double pendulum

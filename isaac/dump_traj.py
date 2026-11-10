@@ -33,8 +33,9 @@ def dump_single():
         sim.arm = arm
         refs = mj.ref_sequence(F_CTRL, mj.F_REF)
         gt = mj.ground_truth(refs, F_CTRL, DEC)[DEC - 1::DEC]
-        measured = np.array([0.0, KP0, KD0])
-        renorm = np.array([h / 2 * KD0, KP0, KD0 + h / 2 * KP0])
+        # The prediction includes the half-step command delay, as the flow figure fits.
+        measured = np.array([0.0, KP0, KD0, 0.0])
+        renorm = np.array([h / 2 * KD0, KP0, KD0, h / 2])
         out[f"{arm}_measured"] = sim.rollout(refs, DEC, measured[None, :])[0]
         out[f"{arm}_renormalized"] = sim.rollout(refs, DEC, renorm[None, :])[0]
         out["reference"] = gt
