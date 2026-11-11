@@ -60,6 +60,15 @@ def num1(x):
     return f"{mantissa}e{int(exponent)}"
 
 
+def short(coef, k, h_max):
+    """Format one polynomial coefficient, with one significant digit if its term contributes
+    almost nothing over the range plotted: a coefficient that small only has to be seen to be
+    small, and the short form leaves room for the ones that carry the curve."""
+    terms = [abs(c) * h_max ** (len(coef) - 1 - i) for i, c in enumerate(coef)]
+    i = len(coef) - 1 - k
+    return (num1 if terms[i] < 0.05 * max(terms) else num)(coef[i])
+
+
 def flow_figure(columns, row_labels, out_paths, h_max, caption, f_ticks,
                 point_colors=None, legend_entries=None, rmse_label="post-fit RMSE (rad)",
                 quadratic=False, show_rmse=True, no_fit=(), row_ylim=None):
@@ -122,9 +131,9 @@ def flow_figure(columns, row_labels, out_paths, h_max, caption, f_ticks,
             theory = t1
             if t1 == 0 and t2 == 0:  # nothing predicted: a free quadratic exposes the h^2 term
                 coef, r2 = poly_fit(h, y, 2)
+                f0, f1, f2 = (short(coef, k, h_max) for k in (2, 1, 0))
                 text = (f"fit: $c_0 + c_1 h + c_2 h^2$, $R^2$ = {r2:.4f}\n"
-                        f"$c_0$ = {num1(coef[2])}, $c_1$ = {num1(coef[1])}, "
-                        f"$c_2$ = {num(coef[0])}")
+                        f"$c_0$ = {f0}, $c_1$ = {f1}, $c_2$ = {f2}")
             elif quadratic:  # separate the predicted slope from the leading correction to it
                 coef, r2 = poly_fit_origin(h, y, 2)
                 text = (f"fit: $c_1 h + c_2 h^2$, $R^2$ = {r2:.4f}\n"

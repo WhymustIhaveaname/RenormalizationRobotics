@@ -7,8 +7,20 @@ theta'), and projecting the discrepancy onto the span of the three tunable opera
 {sin theta, r - theta, theta'} gives the effective parameters.  Whatever falls outside that span
 is a genuine obstruction to renormalizability.
 
-Arm A is semi-implicit Euler with an explicit PD torque; arm C is the same map with
-J -> J + h KD, which is what implicit damping amounts to.  RK4 (arm B) is not covered.
+Three step maps are covered:
+  Euler     semi-implicit Euler with an explicit PD torque (MuJoCo arm A).
+  implicit  the same map with J -> J + h KD, which is what implicit damping amounts to
+            (MuJoCo's implicitfast, arm C; PhysX's own joint drive).
+  held      the PD torque frozen over the step while the dynamics are integrated exactly
+            (MuJoCo's RK4 arm B).
+  drive     PhysX's own joint drive, read off DyCpuGpuArticulation.h: an implicit spring with
+            step delta, iterated to its fixed point, after which the position is integrated with
+            the new velocity.  PGS uses delta = h.  TGS advances time inside its position
+            iterations, so there delta = h / N with N = solverPositionIterationCount, and the
+            counterterms are the same expressions evaluated at h / N.
+
+Isaac's explicit PD is not the held-torque map: its measured step map (probe_step_map.py and
+isaac/probe_step_map_isaac.py) is semi-implicit Euler, whatever the iteration count.
 
 Run:  python derive_second_order.py
 """
@@ -83,8 +95,34 @@ def match(acc):
             (check1, rest1), (check2, rest2))
 
 
-ARMS = (("A: semi-implicit Euler, explicit PD", (f, sp.Integer(0), sp.Integer(0), sp.Integer(0))),
-        ("C: implicit damping (J -> J + h K_D)", (f, -KD*f/J, -KD*f/J, KD**2*f/J**2)))
+# Taylor coefficients of each step map: theta' = theta + h v + h^2 M2th + h^3 M3th, and
+# v' = v + h f + h^2 M2v + h^3 M3v.  For the held torque the only time dependence inside the
+# step is gravity, so the derivatives of the acceleration keep only the c sin(theta) part.
+A1 = -c * sp.cos(th) / J * v                 # d/dt of the acceleration, torque frozen
+A2 = c * sp.sin(th) / J * v**2 - c * sp.cos(th) / J * f
+def physx_drive_map():
+    """Taylor coefficients of PhysX's force drive, solved to its fixed point.
+
+    Per position iteration the solver forms, with a = delta (delta K_P + K_D) and x = 1/(1 + a/J),
+        F <- F (1 - x) - x a v + K_P x delta (r - theta),
+    which converges to F = x delta [K_P (r - theta) - (delta K_P + K_D) v].  The damping the
+    joint really feels is therefore K_D + delta K_P, not K_D.
+    """
+    v_ext = v + h * (-c * sp.sin(th)) / J          # gravity is integrated before the solve
+    v1 = v_ext + h * (KP * (r - th) - (h * KP + KD) * v_ext) / (J + h * (h * KP + KD))
+    th1 = th + h * v1                              # position integrated with the new velocity
+    sv = sp.series(sp.expand(v1 - v), h, 0, 4).removeO()
+    st = sp.series(sp.expand(th1 - th - h * v), h, 0, 4).removeO()
+    return tuple(sp.simplify(e.coeff(h, k)) for e, k in ((st, 2), (sv, 2), (st, 3), (sv, 3)))
+
+
+ARMS = (("Euler: semi-implicit, explicit PD (MuJoCo A)",
+         (f, sp.Integer(0), sp.Integer(0), sp.Integer(0))),
+        ("implicit damping: J -> J + h K_D (MuJoCo C, PhysX drive)",
+         (f, -KD*f/J, -KD*f/J, KD**2*f/J**2)),
+        ("held torque: exact dynamics (MuJoCo B)",
+         (f / 2, A1 / 2, A1 / 6, A2 / 6)),
+        ("drive: PhysX force drive (Isaac C at h, Isaac B at h/N)", physx_drive_map()))
 
 
 def derive():
@@ -94,52 +132,77 @@ def derive():
         print(name)
         for lab, s1, s2 in zip(("J", "K_P", "K_D"), first, second):
             print(f"  {lab}e = {lab} + h*({s1}) + h^2*({sp.simplify(s2)})")
+        d1, d2 = sp.Matrix(first), sp.Matrix(second)
+        p1, p2 = -d1, d1.jacobian((J, KP, KD)) * d1 - d2
+        for lab, x1, x2 in zip(("J", "K_P", "K_D"), p1, p2):
+            print(f"  {lab}* - {lab} = h*({sp.simplify(x1)}) + h^2*({sp.simplify(sp.expand(x2))})")
         print(f"  consistency of the theta and r coefficients: {chk1[0]}, {chk2[0]}")
         print(f"  unrepresentable O(h^2) remainder: {chk2[1]}")
 
 
-def numerical_check():
-    """Each extra order should drop the one-step error by one power of h.
+def step_map(kind, hh, th0, v0, tend, num):
+    """Advance the discrete map from (th0, v0) to time tend."""
+    import numpy as np
+    from scipy.integrate import solve_ivp
+    Jv, KPv, KDv, cv, r0 = num
+    t_, v_ = th0, v0
+    for _ in range(int(round(tend / hh))):
+        if kind.startswith("held"):   # torque frozen, dynamics integrated to machine precision
+            tau = KPv * (r0 - t_) - KDv * v_
+            sol = solve_ivp(lambda _t, y: [y[1], (-cv * np.sin(y[0]) + tau) / Jv],
+                            (0, hh), [t_, v_], rtol=1e-13, atol=1e-14, method="DOP853")
+            t_, v_ = sol.y[0, -1], sol.y[1, -1]
+        elif kind.startswith("drive"):
+            v_ += hh * (-cv * np.sin(t_)) / Jv
+            v_ += hh * (KPv * (r0 - t_) - (hh * KPv + KDv) * v_) / (Jv + hh * (hh * KPv + KDv))
+            t_ += hh * v_
+        else:
+            denom = Jv + hh * KDv if kind.startswith("implicit") else Jv
+            v_ += hh * (-cv * np.sin(t_) + KPv * (r0 - t_) - KDv * v_) / denom
+            t_ += hh * v_
+    return t_
 
-    The modified system's state is not the discrete state: theta matches, but its velocity is
-    theta' = v + h a1 + h^2 a2, so the initial condition has to be transformed too.
+
+def numerical_check():
+    """Each extra order should drop the error by one power of h.
+
+    Everything here is lambdified straight out of the symbolic solution, including the initial
+    condition: the modified system's state is not the discrete state, since its velocity is
+    theta' = v + h a1 + h^2 a2 rather than v.
     """
     import numpy as np
     from scipy.integrate import solve_ivp
     from common import G as GRAV, J0, KD0, KP0, M, L
 
-    Jv, KPv, KDv, cv, r0 = J0, KP0, KD0, M * GRAV * L / 2, 1.0
+    num = (J0, KP0, KD0, M * GRAV * L / 2, 1.0)
+    subs = dict(zip((J, KP, KD, c, r), num))
     tend, th0, v0 = 0.01, 0.3, 0.0
-    acc = lambda t_, v_: (-cv * np.sin(t_) + KPv * (r0 - t_) - KDv * v_) / Jv
-    d0f = lambda t_, v_: v_ * (-cv * np.cos(t_) - KPv) / Jv + acc(t_, v_) * (-KDv / Jv)
-
-    def step_map(hh, implicit):
-        t_, v_ = th0, v0
-        for _ in range(int(round(tend / hh))):
-            v_ += hh * (-cv * np.sin(t_) + KPv * (r0 - t_) - KDv * v_) / (
-                Jv + hh * KDv if implicit else Jv)
-            t_ += hh * v_
-        return t_
 
     def flow(Je, KPe, KDe, thd0):
+        Jv, KPv, KDv, cv, r0 = num
         rhs = lambda t, y: [y[1], (-cv * np.sin(y[0]) + KPe * (r0 - y[0]) - KDe * y[1]) / Je]
         return solve_ivp(rhs, (0, tend), [th0, thd0], rtol=1e-13, atol=1e-14,
                          method="DOP853").y[0, -1]
 
-    for implicit in (False, True):
+    for name, M_ in ARMS:
+        a1, b1, a2, b2 = modified_field(*M_)
+        first, second, _, _ = match(acceleration(a1, b1, a2, b2))
+        at = [float(e.subs(subs).subs({th: th0, v: v0})) for e in (a1, a2)]
+        s1 = [float(e.subs(subs)) for e in first]
+        s2 = [float(e.subs(subs)) for e in second]
+        Jv, KPv, KDv = num[:3]
         print("=" * 76)
-        print("C: implicit damping" if implicit else "A: semi-implicit Euler")
-        sign = +1 if implicit else -1
-        a1 = acc(th0, v0) / 2
-        a2 = (-KDv * acc(th0, v0) / (2 * Jv) if implicit else 0.0) - d0f(th0, v0) / 6
+        print(name)
+        print(f"  a1 = {at[0]:+.4g}, a2 = {at[1]:+.4g} rad/s per power of h")
         prev = None
         for hh in (5e-4, 2.5e-4, 1.25e-4, 6.25e-5):
-            sim = step_map(hh, implicit)
+            sim = step_map(name, hh, th0, v0, tend, num)
             row = (sim - flow(Jv, KPv, KDv, v0),
-                   sim - flow(Jv + sign * hh * KDv / 2, KPv, KDv, v0 + hh * a1),
-                   sim - flow(Jv + sign * hh * KDv / 2 - hh**2 * (Jv * KPv + KDv**2) / (12 * Jv),
-                              KPv, KDv - hh**2 * KPv * KDv / (12 * Jv),
-                              v0 + hh * a1 + hh**2 * a2))
+                   sim - flow(Jv + hh * s1[0], KPv + hh * s1[1], KDv + hh * s1[2],
+                              v0 + hh * at[0]),
+                   sim - flow(Jv + hh * s1[0] + hh**2 * s2[0], KPv + hh * s1[1] + hh**2 * s2[1],
+                              KDv + hh * s1[2] + hh**2 * s2[2],
+                              v0 + hh * at[0] + hh**2 * at[1]))
             o = ["   "] * 3 if prev is None else [f"{np.log2(abs(a / b)):4.1f}"
                                                   for a, b in zip(prev, row)]
             print(f"  h={hh*1e3:6.4f} ms  none {row[0]:+.2e} [{o[0]}]  first {row[1]:+.2e} "
