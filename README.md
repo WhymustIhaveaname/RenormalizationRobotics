@@ -176,8 +176,8 @@ Experiment 1 repeated in Isaac Sim 5.1 against the same reference solution, on t
 | | solver | PD force |
 |---|---|---|
 | explicit PD + TGS | TGS | torque computed in Python each physics step, as legged_gym does |
-| PhysX drive + TGS | TGS | PhysX joint drive, damping implicit in the end-of-step velocity |
-| PhysX drive + PGS | PGS | the same implicit drive |
+| PhysX drive + TGS | TGS | PhysX joint drive: an implicit spring, damping $K_D + \\delta K_P$ at $\\delta = h/32$ |
+| PhysX drive + PGS | PGS | the same drive at $\\delta = h$ |
 
 The model is validated first: the simulated error falls as $1/f$ towards the reference — 0.0284, 0.0149, 0.0038, 0.00095 rad at 200, 400, 1600, 6400 Hz — so Isaac and MuJoCo describe the same mechanism.
 
@@ -185,20 +185,37 @@ The model is validated first: the simulated error falls as $1/f$ towards the ref
 
 ![Isaac flow](exp1_pendulum/results/fig_flow_isaac_single.png)
 
-Four parameters are fitted: a rotor inertia on the joint (the physical joint has none, so this plays the role of $\Delta J$), $K_P$, $K_D$, and a command delay.
+Four parameters are fitted: a rotor inertia on the joint (the physical joint has none, so this plays the role of $\Delta J$), $K_P$, $K_D$, and a command delay. Each scheme is given its own counterterms rather than MuJoCo's, because each realizes a different step map.
 
-| | rotor-inertia slope | command-delay slope |
+**What PhysX actually computes.** PhysX 5's CPU code is BSD-3 open source ([NVIDIA-Omniverse/PhysX](https://github.com/NVIDIA-Omniverse/PhysX)) and this experiment runs the CPU pipeline, so the solver can simply be read. `DyCpuGpuArticulation.h` forms, once per position iteration, with $a = \delta(\delta K_P + K_D)$ and $x = 1/(1 + a/J)$:
+
+$$F \leftarrow F(1-x) - x a \dot\theta + K_P x \delta (r - \theta)$$
+
+whose fixed point is
+
+$$\tau = \frac{K_P (r - \theta) - (\delta K_P + K_D)\dot\theta}{1 + \delta(\delta K_P + K_D)/J}$$
+
+**so the damping the joint feels is $K_D + \delta K_P$, not $K_D$.** PGS runs this at $\delta = h$; TGS advances time inside its position iterations, so there $\delta = h/N$ with $N$ = `solverPositionIterationCount`, 32 by default. Backward error analysis of that map gives
+
+$$J^\star - J = -\frac{\delta K_D}{2} + \delta^2\frac{J K_P + K_D^2}{12 J}, \qquad K_P^\star = K_P, \qquad K_D^\star - K_D = -\delta K_P + \delta^2 \frac{K_P K_D}{12 J}$$
+
+For the explicitly held torque there is nothing to read, so the step map was measured instead: put the simulator in a known state, take one step, subtract the known $h^1$ part and extrapolate $h \to 0$ (`exp1_pendulum/probe_step_map.py`, which identifies MuJoCo's three arms to 0.07%, and `isaac/probe_step_map_isaac.py`). The answer is $M_{2\theta} = f$ and $M_{2v} = 0$ whatever the iteration count: **semi-implicit Euler**, so MuJoCo's Euler counterterms apply unchanged.
+
+| | $c_1$ identified | $c_1$ predicted |
 |---|---|---|
-| explicit PD + TGS | **+1.02** ($R^2$ = 0.9999) | **0.51** ($R^2$ = 0.9998) |
-| PhysX drive + TGS | −0.07 | 0.02 |
-| PhysX drive + PGS | **−0.86** ($R^2$ = 0.997) | **0.44** ($R^2$ = 0.999) |
-| predicted | 1.00 ($K_D/2$) | 0.50 ($h/2$) |
+| explicit PD + TGS: rotor inertia$/J$ | +0.0634 per ms | +0.0712 ($K_D/2J$) |
+| explicit PD + TGS: command delay | 0.56 per ms | 0.50 ($h/2$) |
+| **PhysX drive + PGS: rotor inertia$/J$** | **−0.0706 per ms** | −0.0712 |
+| **PhysX drive + PGS: $\Delta K_D/K_D$** | **−0.0399 per ms** | −0.0400 ($-K_P/K_D$) |
+| PhysX drive + PGS: command delay | 0.50 per ms | 0.50 |
+| PhysX drive + TGS: rotor inertia$/J$ | −0.00212 per ms | −0.00222 ($-K_D/2JN$) |
+| PhysX drive + TGS: $\Delta K_D/K_D$ | −0.00132 per ms | −0.00125 ($-K_P/K_D N$) |
 
-**The counterterm is a property of the discretization, not of the engine.** With explicit torque, Isaac lands on the paper's prediction to 2%, in a different engine with a different solver. With the implicit PhysX drive under PGS the inertia shift turns negative, which is the same sign flip MuJoCo showed for `implicitfast`: implicit damping is algebraically identical to explicit damping with $J \to J + hK_D$, so the counterterm has to subtract it back.
+The PGS column matches to four digits with $R^2$ = 0.999, including the $h^2$ curvature of $\Delta K_D$: 4.66e−4 against the predicted 4.75e−4 per ms². $\Delta K_P$ is predicted not to flow and does not, in any scheme.
 
-TGS with the implicit drive lands on neither: it re-linearizes several times within a step, which already removes most of the shift. That also makes it the most accurate scheme out of the box — its measured-parameter error at $h$ = 1 ms is 1.8e−4 rad, 31× below PGS.
+**The counterterm is a property of the discretization, not of the engine**, and the sign is a property of the scheme. An explicitly held torque gives $+hK_D/2$ in both engines; the implicit drive gives $-\delta K_D/2$, the same flip MuJoCo shows for `implicitfast`. TGS is not a different physics from PGS: it is the same drive run at a step 32 times smaller, which is also why it is the most accurate scheme out of the box — its measured-parameter error at $h$ = 1 ms is 1.8e−4 rad, 31× below PGS.
 
-$\Delta K_D$ and $\Delta K_P$ are predicted not to flow at first order and do not: their linear coefficients are at the 1e−1 and 1e−2 level against $K_D$ = 2 and $K_P$ = 80, and the fits are almost purely quadratic.
+**Only well-conditioned control rates are plotted.** The pendulum's settling time is $2J/K_D$ = 14 ms. At $f_\mathrm{ctrl}$ = 100 Hz the control period is shorter than that and every sample carries information about the parameters; at 10 Hz the pendulum reaches the static equilibrium for each held command within the first 14 ms of a 100 ms period, so most of the trajectory says nothing and the fit is ill-conditioned — its error with the measured parameters is six times *smaller* there, which is the symptom, not a success.
 
 ### Behaviour
 
@@ -208,9 +225,9 @@ With the predicted parameters, and no fitting at all, the error at 200 Hz drops 
 
 The video, rendered with the MuJoCo renderer from Isaac's joint angles so both engines produce the same picture: [`exp1_pendulum/results/isaac_single.mp4`](exp1_pendulum/results/isaac_single.mp4).
 
-### Where the first order is not enough
+### Where the second order is not enough
 
-The post-fit error does not fall as $h^2$ in any Isaac scheme, so four parameters still leave an $O(h)$ residual — unlike MuJoCo's RK4, where three sufficed. That is consistent with every PhysX scheme being first order in the free dynamics as well as in the PD: there is a second omitted effect that these operators cannot represent.
+Once $\delta = h/N$ is used, TGS's first-order counterterms come out right, but its $h^2$ coefficient does not. Composing $N$ substeps predicts $c_2 \propto 1/N^2$; sweeping $N$ from 1 to 32 instead gives $c_1 \times N$ constant at −0.070 against the predicted −0.0712, while $c_2$ changes sign between $N$ = 1 and 4 and then saturates near −5e−4. Something inside a TGS step happens once per step rather than once per substep: it cancels at first order and survives at second. At $N$ = 1, TGS reduces exactly to PGS — $c_1$ = −0.0701 and $c_2$ = +1.75e−3 against −0.0712 and +2.16e−3.
 
 ## Reproduce
 
