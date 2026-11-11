@@ -13,12 +13,11 @@ from pathlib import Path
 
 import numpy as np
 
-from common import (ARMS, J0, KD0, KP0, PARAM0, Sim, first_order_prediction,
-                    first_order_prediction_delay, ground_truth, identify, ref_sequence)
+from common import (ARMS, PARAM0, Sim, first_order_prediction, first_order_prediction_delay,
+                    ground_truth, identify, ref_sequence, start_points)
 
 F_CTRL = (10, 20, 50, 100, 200)  # nominal control frequencies (Hz)
 H_TARGET = np.arange(1, 21) * 0.25e-3  # target physics time step h = 0.25, 0.5, ..., 5 ms
-N_RANDOM_STARTS = 2
 
 
 def schedule(f_nominal, h_target):
@@ -28,20 +27,6 @@ def schedule(f_nominal, h_target):
     return round(f / dec), dec
 WITH_DELAY = "--delay" in sys.argv
 OUT = Path(__file__).parent / "results" / ("flow_mujoco_delay.json" if WITH_DELAY else "flow_mujoco.json")
-
-
-def starts_for(arm, h, prev, rng):
-    if not WITH_DELAY:
-        starts = [PARAM0, first_order_prediction("B", h)]  # the paper's formula with delta t = h/2
-        # Inflated inertia keeps explicit PD stable when h K_D / J is no longer small.
-        starts += [np.array([J0 + c * h * KD0, KP0, KD0]) for c in (1, 2, 4)]
-        starts += [PARAM0 * np.exp(rng.normal(0, 0.5, 3)) for _ in range(N_RANDOM_STARTS)]
-    else:
-        starts = [np.append(PARAM0, 0.0), first_order_prediction_delay(arm, h)]
-        starts += [np.array([J0 + c * h * KD0, KP0, KD0, h / 2]) for c in (1, 2, 4)]
-        starts += [np.append(PARAM0 * np.exp(rng.normal(0, 0.5, 3)), rng.uniform(0, h))
-                   for _ in range(N_RANDOM_STARTS)]
-    return starts + ([prev] if prev is not None else [])
 
 
 def chain(args):
@@ -56,7 +41,11 @@ def chain(args):
         refs = ref_sequence(f_ctrl)
         gt = ground_truth(refs, f_ctrl, dec)
         t0 = time.perf_counter()
-        fit = identify(sim, [(refs, gt)], f_ctrl, dec, starts_for(arm, h, prev, rng),
+        predicted = (first_order_prediction_delay(arm, h) if WITH_DELAY
+                     else first_order_prediction("B", h))  # the paper's formula, delta t = h/2
+        fit = identify(lambda J, kp, kd, delay=0.0: sim.rollout(refs, f_ctrl, dec, J, kp, kd,
+                                                               delay),
+                       gt, h, start_points(h, predicted, prev, rng, WITH_DELAY),
                        with_delay=WITH_DELAY)
         meas = sim.rollout(refs, f_ctrl, dec, *PARAM0)
         fit["rmse_measured"] = float(np.sqrt(np.mean((meas - gt) ** 2))) if meas is not None else None

@@ -44,7 +44,9 @@ def chain(arm):
         if prev is not None:
             starts.append(prev)
         t0 = time.perf_counter()
-        fit = identify(sim, refs, dec, gt, starts, f_ctrl=f_ctrl, with_delay=WITH_DELAY)
+        fit = identify(lambda a, kp, kd, delay=0.0: sim.rollout(refs, dec, a, kp, kd, delay,
+                                                              f_ctrl=f_ctrl),
+                       gt, h, starts, with_delay=WITH_DELAY)
         prev = np.array(fit["params"])
         rows.append({"arm": arm, "h": h, "f": 1.0 / h, "f_ctrl": f_ctrl, "dec": dec,
                      "params_identified": fit["params"], "rmse_identified": fit["rmse"],

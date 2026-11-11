@@ -1,7 +1,12 @@
 """Isaac Sim version of experiment 1: effective parameters of a PD-controlled pendulum.
 
+The grid is the one exp1_pendulum/run_flow.py uses, so the two engines are directly comparable:
+for each target h and nominal control frequency, the integer decimation closest to
+1 / (f_ctrl_nominal * h) with the integer f_ctrl (Hz) closest to 1 / (decimation * h).  Running
+several control rates at the same h is what exposes whether a shift depends on h alone.
+
 Usage (inside the Isaac venv):  python run_single.py --arm A
-Writes results/isaac_single_<arm>.json next to the MuJoCo results.
+Writes results/isaac_single_grid_<arm>.json next to the MuJoCo results.
 """
 
 import argparse
@@ -15,12 +20,11 @@ from isaacsim import SimulationApp
 parser = argparse.ArgumentParser()
 parser.add_argument("--arm", default="A", choices=("A", "B", "C"))
 parser.add_argument("--t-fit", type=float, default=1.0, help="seconds per drive frequency")
-parser.add_argument("--delay", action="store_true", help="also identify a command delay")
-parser.add_argument("--points", type=int, default=10)
-parser.add_argument("--h-min", type=float, default=1.0, help="ms")
-parser.add_argument("--h-max", type=float, default=19.0, help="ms")
-parser.add_argument("--single-drive", action="store_true",
-                    help="one 2 Hz command, as MuJoCo's flow sweep uses")
+parser.add_argument("--no-delay", action="store_true", help="fit only (armature, K_P, K_D)")
+parser.add_argument("--h-step", type=float, default=0.25, help="ms between grid points")
+parser.add_argument("--points", type=int, default=20)
+parser.add_argument("--all-drives", action="store_true",
+                    help="fit one parameter set to all five drive frequencies at once")
 args = parser.parse_args()
 app = SimulationApp({"headless": True})
 
@@ -30,19 +34,19 @@ ROOT = Path("/home/youran/RenormalizationRobotics")
 sys.path.insert(0, str(ROOT / "isaac"))
 sys.path.insert(0, str(ROOT / "exp1_pendulum"))
 
-from fit import fit  # noqa: E402
-from pendulum_isaac import F_CTRL, J0, KD0, KP0, IsaacPendulum  # noqa: E402
+from pendulum_isaac import J0, KD0, KP0, IsaacPendulum  # noqa: E402
 import common as mj  # noqa: E402  (the MuJoCo module supplies the shared reference solution)
 
-H_TARGET = np.linspace(args.h_min * 1e-3, args.h_max * 1e-3, args.points)
-OUT = ROOT / "exp1_pendulum" / "results" / (
-    f"isaac_single_smallh_{args.arm}.json" if (args.delay and args.h_max <= 6)
-    else f"isaac_single_delay_{args.arm}.json" if args.delay else f"isaac_single_{args.arm}.json")
+F_CTRL_NOMINAL = (10, 20, 50, 100, 200)  # same nominal control frequencies as MuJoCo
+H_TARGET = np.arange(1, args.points + 1) * args.h_step * 1e-3
+WITH_DELAY = not args.no_delay
+OUT = ROOT / "exp1_pendulum" / "results" / f"isaac_single_grid_{args.arm}.json"
 
 
-def schedule(h_target):
+def schedule(f_nominal, h_target):
+    """Integer (f_ctrl, decimation) whose physics step is closest to h_target."""
     f = 1.0 / h_target
-    dec = max(1, round(f / F_CTRL))
+    dec = max(1, round(f / f_nominal))
     return round(f / dec), dec
 
 
@@ -50,62 +54,67 @@ def main():
     from isaacsim.core.api import World
 
     world = World(physics_dt=1 / 200, stage_units_in_meters=1.0, backend="numpy")
-    ndim = 4 if args.delay else 3
-    n_envs = 1 + 2 * ndim
-    sim = IsaacPendulum(world, args.arm, n_envs)
+    ndim = 4 if WITH_DELAY else 3
+    sim = IsaacPendulum(world, args.arm, 2 * ndim)   # one env per central-difference probe
 
-    rows, prev = [], None
-    for h_target in sorted(H_TARGET):
-        f_ctrl, dec = schedule(h_target)
-        h = 1.0 / (f_ctrl * dec)
-        sim.set_dt(h)
-        drives = (mj.F_REF,) if args.single_drive else mj.DRIVES
-        data = [(mj.ref_sequence(f_ctrl, f_ref, t_end=args.t_fit), f_ref) for f_ref in drives]
-        data = [(refs, mj.ground_truth(refs, f_ctrl, dec)[dec - 1::dec]) for refs, _ in data]
-        gt = np.concatenate([g for _, g in data])
+    rows = []
+    for f_nominal in F_CTRL_NOMINAL:
+        rng = np.random.default_rng(f_nominal)
+        prev = None
+        for h_target in H_TARGET:
+            f_ctrl, dec = schedule(f_nominal, h_target)
+            h = 1.0 / (f_ctrl * dec)
+            sim.set_dt(h)
+            drives = mj.DRIVES if args.all_drives else (mj.F_REF,)
+            data = [mj.ref_sequence(f_ctrl, f_ref, t_end=args.t_fit) for f_ref in drives]
+            data = [(refs, mj.ground_truth(refs, f_ctrl, dec)[dec - 1::dec]) for refs in data]
+            gt = np.concatenate([g for _, g in data])
 
-        def rollout(P):
-            return np.concatenate([sim.rollout(refs, dec, P, f_ctrl=f_ctrl) for refs, _ in data],
-                                  axis=1)
+            def pack(params):
+                """(J, K_P, K_D, delay) rows -> the (armature, K_P, K_D, delay) Isaac wants."""
+                P = np.atleast_2d(np.asarray(params, float))
+                if P.shape[1] == 3:
+                    P = np.hstack([P, np.zeros((len(P), 1))])
+                return np.column_stack([P[:, 0] - J0, P[:, 1], P[:, 2], P[:, 3]])
 
-        if args.delay:
-            measured = np.array([0.0, KP0, KD0, 0.0])
-            predicted = np.array([h / 2 * KD0, KP0, KD0, h / 2])
-            scales = np.array([h / 2 * KD0, KP0, KD0, h])
-            lo = np.array([-0.9 * J0 / scales[0], -2.0, -2.0, -5.0])
-            hi = np.array([20.0, 2.0, 2.0, 5.0])
-        else:
-            measured = np.array([0.0, KP0, KD0])
-            predicted = np.array([h / 2 * KD0, KP0, KD0 + h / 2 * KP0])
-            scales = np.array([h / 2 * KD0, KP0, KD0])
-            lo = np.array([-0.9 * J0 / scales[0], -2.0, -2.0])
-            hi = np.array([20.0, 2.0, 2.0])
-        starts = [np.zeros(len(scales)), (predicted - measured) / scales]
-        if prev is not None:
-            starts.append((prev - measured) / scales)
-        # The landscape has poor local optima; restart around the prediction as well.
-        rng = np.random.default_rng(int(h * 1e6))
-        base = (predicted - measured) / scales
-        starts += [base * rng.uniform(0.3, 2.0, len(scales)) for _ in range(2)]
-        t0 = time.perf_counter()
-        out = fit(rollout, gt, starts, scales, measured, bounds=(lo, hi))
-        prev = np.array(out["params"])
+            def run(params):
+                P = pack(params)
+                return np.concatenate([sim.rollout(refs, dec, P, f_ctrl=f_ctrl)
+                                       for refs, _ in data], axis=1)
 
-        meas_traj = rollout(measured[None, :])[0]
-        pred_traj = rollout(predicted[None, :])[0]
-        rmse = lambda t: float(np.sqrt(np.mean((t - gt) ** 2))) if np.all(np.isfinite(t)) else None
-        rows.append({"arm": args.arm, "h": h, "f": 1.0 / h, "f_ctrl": f_ctrl, "dec": dec,
-                     "params_identified": out["params"], "rmse_identified": out["rmse"],
-                     "params_renormalized": predicted.tolist(),
-                     "rmse_measured": rmse(meas_traj), "rmse_renormalized": rmse(pred_traj),
-                     "seconds": time.perf_counter() - t0})
-        r = rows[-1]
-        print(f"{args.arm} h={h * 1e3:6.3f} ms ({f_ctrl}x{dec}): armature/(h/2 K_D) "
-              f"{r['params_identified'][0] / (h / 2 * KD0):7.3f}  rmse meas {r['rmse_measured']} "
-              f"renorm {r['rmse_renormalized']} fit {r['rmse_identified']:.3e} "
-              f"({r['seconds']:.0f}s)", flush=True)
-        OUT.write_text(json.dumps(rows, indent=1, default=float))
-    print(f"wrote {OUT}")
+            def rollout(J, kp, kd, delay=0.0):
+                return run([(J, kp, kd, delay)])[0]
+
+            def batch(param_rows):
+                # One Isaac step costs the same for one environment or sixteen, so the whole
+                # central-difference Jacobian comes out of a single batched rollout.
+                out = run(param_rows)
+                return [(row - gt) / np.sqrt(len(gt)) for row in out]
+
+            if WITH_DELAY:
+                measured = np.array([J0, KP0, KD0, 0.0])
+                predicted = np.array([J0 + h / 2 * KD0, KP0, KD0, h / 2])
+            else:
+                measured = np.array([J0, KP0, KD0])
+                predicted = np.array([J0 + h / 2 * KD0, KP0, KD0 + h / 2 * KP0])
+            starts = mj.start_points(h, predicted, prev, rng, WITH_DELAY)
+            t0 = time.perf_counter()
+            out = mj.identify(rollout, gt, h, starts, with_delay=WITH_DELAY, batch=batch)
+            prev = np.array(out["params"])
+
+            rmse = lambda p: (float(np.sqrt(np.mean((rollout(*p) - gt) ** 2))))
+            rows.append({"arm": args.arm, "h": h, "f": 1.0 / h, "f_ctrl_nominal": f_nominal,
+                         "f_ctrl": f_ctrl, "dec": dec,
+                         "params_identified": out["params"], "rmse_identified": out["rmse"],
+                         "params_renormalized": predicted.tolist(),
+                         "rmse_measured": rmse(measured), "rmse_renormalized": rmse(predicted),
+                         "seconds": time.perf_counter() - t0})
+            r = rows[-1]
+            print(f"{args.arm} f_ctrl={f_ctrl:3d}x{dec:<4d} h={h * 1e3:6.3f} ms: "
+                  f"dJ/(h K_D/2) {(r['params_identified'][0] - J0) / (h / 2 * KD0):7.3f}  "
+                  f"fit rmse {r['rmse_identified']:.3e} ({r['seconds']:.0f}s)", flush=True)
+            OUT.write_text(json.dumps(rows, indent=1, default=float))
+    print(f"wrote {len(rows)} fits to {OUT}")
 
 
 main()

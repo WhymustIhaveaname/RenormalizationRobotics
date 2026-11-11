@@ -9,10 +9,16 @@ M_sim = M_real + dt * K_D. In MuJoCo that is exactly a rotor inertia (`armature`
 joint, which the physical joint does not have.
 """
 
+import sys
+from pathlib import Path
+
 import mujoco
 import numpy as np
 from scipy.integrate import solve_ivp
-from scipy.optimize import least_squares
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from fitting import identify as _identify  # noqa: E402
 
 # Two uniform rods, same mass and length as the single pendulum (SI units).
 M1 = M2 = 0.45359237  # 1 lb
@@ -218,33 +224,11 @@ def rmse(sim, refs, dec, params, gt, f_ctrl=F_CTRL):
     return None if theta is None else float(np.sqrt(np.mean((theta - gt) ** 2)))
 
 
-def identify(sim, refs, dec, gt, starts, f_ctrl=F_CTRL, with_delay=False):
-    """Fit (armature, K_P, K_D[, delay]); the linear parameters may go negative."""
-    h = 1.0 / (f_ctrl * dec)
-    unit = h / 2 * KD0  # the predicted rotor inertia, the scale for the linear parameter
-    n = gt.size
+def identify(rollout, gt, h, starts, with_delay=False, batch=None):
+    """This double pendulum's wrapper around the shared fitter in ../fitting.py.
 
-    def unpack(x):
-        p = [x[0] * unit, KP0 * np.exp(x[1]), KD0 * np.exp(x[2])]
-        return np.array(p + [x[3] * h] if with_delay else p)
-
-    def residual(x):
-        theta = sim.rollout(refs, dec, *unpack(x), f_ctrl=f_ctrl)
-        if theta is None:
-            return np.full(n, DIVERGED_RESIDUAL / np.sqrt(n))
-        return (theta - gt).ravel() / np.sqrt(n)
-
-    lo = [-0.9 * M11_MIN / unit, -2.0, -2.0] + ([-5.0] if with_delay else [])
-    hi = [0.9 * M11_MIN / unit, 2.0, 2.0] + ([5.0] if with_delay else [])
-    best = None
-    for p in starts:
-        p = np.asarray(p, dtype=float)
-        x0 = [p[0] / unit, np.log(p[1] / KP0), np.log(p[2] / KD0)]
-        if with_delay:
-            x0.append((p[3] if len(p) > 3 else 0.0) / h)
-        x0 = np.clip(x0, np.array(lo) * 0.99, np.array(hi) * 0.99)
-        res = least_squares(residual, x0, bounds=(lo, hi), xtol=1e-12, ftol=1e-14, gtol=1e-14,
-                            max_nfev=400)
-        if best is None or np.sqrt(2 * res.cost) < best[0]:
-            best = (np.sqrt(2 * res.cost), unpack(res.x))
-    return {"rmse": best[0], "params": best[1].tolist()}
+    The joint carries no rotor inertia to begin with and its counterterm may be negative, so the
+    first parameter is fitted linearly and bounded by the smallest M11 the configuration reaches.
+    """
+    return _identify(rollout, gt, h, starts, PARAM0, with_delay=with_delay, batch=batch,
+                     inertia_floor=M11_MIN)

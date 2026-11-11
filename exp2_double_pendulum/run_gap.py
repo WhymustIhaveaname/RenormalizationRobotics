@@ -37,7 +37,8 @@ def run(dec):
 
     t0 = time.perf_counter()
     pred = renormalized(h)
-    fit = identify(sim, refs_fit, dec, gt_fit, [PARAM0, pred])
+    fit = identify(lambda a, kp, kd, delay=0.0: sim.rollout(refs_fit, dec, a, kp, kd, delay),
+                   gt_fit, 1.0 / (F_CTRL * dec), [PARAM0, pred])
     row = {"dec": dec, "h": h, "f": F_CTRL * dec,
            "params_renormalized": pred.tolist(), "params_identified": fit["params"],
            "rmse_identified": fit["rmse"], "seconds": time.perf_counter() - t0}

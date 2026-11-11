@@ -1,9 +1,15 @@
 """PD-controlled uniform-rod pendulum: ground truth, MuJoCo arms, and system identification."""
 
+import sys
+from pathlib import Path
+
 import numpy as np
 import mujoco
 from scipy.integrate import solve_ivp
-from scipy.optimize import least_squares
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from fitting import identify as _identify, start_points as _start_points  # noqa: E402
 
 # Uniform rod, hinge at one end (SI units).
 M = 0.45359237  # 1 lb
@@ -194,7 +200,6 @@ def second_order_shift(arm, h):
 
 
 PARAM0 = np.array([J0, KP0, KD0])
-DIVERGED_RESIDUAL = 10.0  # rad, per sample
 
 
 def pooled_rmse(sim, datasets, f_ctrl, dec, params):
@@ -208,44 +213,11 @@ def pooled_rmse(sim, datasets, f_ctrl, dec, params):
     return float(np.sqrt(np.mean(np.concatenate(errs) ** 2)))
 
 
-def identify(sim, datasets, f_ctrl, dec, starts, with_delay=False):
-    """Least-squares fit of (J, K_P, K_D) in log space, plus the command delay in units of h.
+def start_points(h, predicted, prev, rng, with_delay):
+    """This pendulum's starting points; the fitter itself lives in ../fitting.py."""
+    return _start_points(h, predicted, prev, rng, with_delay, PARAM0)
 
-    One parameter set is fitted to all `datasets` — each a (refs, ground truth) pair — at once,
-    so it cannot specialize to a single command.
-    `starts` are parameter vectors (J, K_P, K_D) or (J, K_P, K_D, delay); returns the best fit.
-    """
-    n = sum(len(gt) for _, gt in datasets)
-    h = 1.0 / (f_ctrl * dec)
 
-    def unpack(x):
-        return (*(PARAM0 * np.exp(x[:3])), *(x[3:] * h))
-
-    def pack(p):
-        p = np.asarray(p, dtype=float)
-        x = np.log(p[:3] / PARAM0)
-        return np.append(x, (p[3] if len(p) > 3 else 0.0) / h) if with_delay else x
-
-    def residual(x):
-        params = unpack(x)
-        errs = []
-        for refs, gt in datasets:
-            theta = sim.rollout(refs, f_ctrl, dec, *params)
-            errs.append(np.full(len(gt), DIVERGED_RESIDUAL) if theta is None else theta - gt)
-        return np.concatenate(errs) / np.sqrt(n)
-
-    fits = []
-    for p in starts:
-        x0 = pack(p)
-        r0 = residual(x0)
-        if np.all(r0 == r0[0]) and r0[0] > 0:  # diverged start
-            fits.append((np.inf, np.array(unpack(x0)), x0, None))
-            continue
-        res = least_squares(residual, x0, method="trf", xtol=1e-12, ftol=1e-14, gtol=1e-14,
-                            max_nfev=400)
-        fits.append((np.sqrt(2 * res.cost), np.array(unpack(res.x)), res.x, res.jac))
-    rmse, params, x, jac = min(fits, key=lambda f: f[0])
-    cond = np.linalg.cond(jac) if jac is not None else np.inf
-    spread = [f[1].tolist() for f in fits if np.isfinite(f[0])]
-    return {"rmse": rmse, "params": params.tolist(), "cond": cond,
-            "start_rmse": [f[0] for f in fits], "start_params": spread}
+def identify(rollout, gt, h, starts, with_delay=False, batch=None):
+    """This pendulum's wrapper around the shared fitter in ../fitting.py."""
+    return _identify(rollout, gt, h, starts, PARAM0, with_delay=with_delay, batch=batch)

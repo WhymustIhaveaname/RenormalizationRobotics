@@ -25,7 +25,6 @@ ROOT = Path("/home/youran/RenormalizationRobotics")
 sys.path.insert(0, str(ROOT / "isaac"))
 sys.path.insert(0, str(ROOT / "exp2_double_pendulum"))
 
-from fit import fit  # noqa: E402
 from double_isaac import F_CTRL, KD0, KP0, IsaacDouble  # noqa: E402
 import common as mj  # noqa: E402
 
@@ -55,23 +54,19 @@ def main():
         refs = mj.ref_sequence(args.t_fit, f_ctrl)
         gt = ref_sim.ground_truth(refs, f_ctrl=f_ctrl)
 
-        def rollout(P):
-            return sim.rollout(refs, dec, P, f_ctrl=f_ctrl)
+        def run(rows, _fc=f_ctrl, _dec=dec, _refs=refs):
+            return sim.rollout(_refs, _dec, np.atleast_2d(np.asarray(rows, float)), f_ctrl=_fc)
 
         measured = np.array([0.0, KP0, KD0])
         predicted = np.array([h / 2 * KD0, KP0, KD0 + h / 2 * KP0])
-        scales = np.array([h / 2 * KD0, KP0, KD0])
-        starts = [np.zeros(3), (predicted - measured) / scales]
-        if prev is not None:
-            starts.append((prev - measured) / scales)
+        starts = mj.start_points(h, predicted, prev, np.random.default_rng(int(h * 1e6)), False)
         t0 = time.perf_counter()
-        out = fit(rollout, gt, starts, scales, measured,
-                  bounds=(np.array([-0.9 * M11_MIN / scales[0], -2.0, -2.0]),
-                          np.array([40.0, 2.0, 2.0])))
+        out = mj.identify(lambda a, kp, kd: run([(a, kp, kd)])[0], gt, h, starts,
+                          batch=lambda rows: [(t - gt).ravel() / np.sqrt(gt.size)
+                                              for t in run(rows)])
         prev = np.array(out["params"])
 
-        rmse = lambda p: (lambda t: float(np.sqrt(np.mean((t - gt) ** 2)))
-                          if np.all(np.isfinite(t)) else None)(rollout(p[None, :])[0])
+        rmse = lambda p: float(np.sqrt(np.mean((run([p])[0] - gt) ** 2)))
         rows.append({"arm": args.arm, "h": h, "f": 1.0 / h, "f_ctrl": f_ctrl, "dec": dec,
                      "params_identified": out["params"], "rmse_identified": out["rmse"],
                      "params_renormalized": predicted.tolist(),

@@ -60,7 +60,13 @@ def run_arm(arm):
             starts.append(ren)
         if prev is not None:
             starts.append(prev)
-        fit = identify(sim, data, F_CTRL, dec, starts, with_delay=with_delay)
+        gt = np.concatenate([g for _, g in data])
+
+        def rollout(J, kp, kd, delay=0.0, _data=data):
+            out = [sim.rollout(refs, F_CTRL, dec, J, kp, kd, delay) for refs, _ in _data]
+            return None if any(t is None for t in out) else np.concatenate(out)
+
+        fit = identify(rollout, gt, h, starts, with_delay=with_delay)
         prev = np.array(fit["params"])
         rows.append({
             "arm": arm, "h": h, "f": 1.0 / h, "f_ctrl": F_CTRL, "dec": dec,
