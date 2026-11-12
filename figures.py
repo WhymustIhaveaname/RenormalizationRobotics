@@ -128,7 +128,6 @@ def flow_figure(columns, row_labels, out_paths, h_max, caption, f_ticks,
                     color=INK, lw=1.4, zorder=1,
                     label=(f"theory: $c_1$ = {num(t1)}, $c_2$ = {num(t2)}" if t2
                            else f"theory: slope {num(t1)}"))
-            theory = t1
             if t1 == 0 and t2 == 0:  # nothing predicted: a free quadratic exposes the h^2 term
                 coef, r2 = poly_fit(h, y, 2)
                 f0, f1, f2 = (short(coef, k, h_max) for k in (2, 1, 0))

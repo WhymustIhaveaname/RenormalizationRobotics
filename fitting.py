@@ -6,6 +6,8 @@ The only thing an engine supplies is how to roll out a trajectory, plus optional
 evaluate several parameter vectors at once.
 """
 
+import threading
+
 import numpy as np
 from scipy.optimize import least_squares
 
@@ -13,6 +15,50 @@ DIVERGED_RESIDUAL = 10.0  # residual reported for a rollout that blew up
 
 
 N_RANDOM_STARTS = 2
+
+
+class _Gang:
+    """Lets several fits share one batched rollout.
+
+    Each start runs in its own thread and calls scipy exactly as it would on its own; this
+    only collects the rollout requests that are outstanding at the same moment and issues
+    them as a single call.  The optimizer, its tolerances and its iterates are untouched, so
+    the answer is the serial answer - what changes is that a simulator which costs the same
+    for eight worlds as for sixty-four is asked once instead of seven times.
+    """
+
+    def __init__(self, batch, n_fits):
+        self.batch, self.active = batch, n_fits
+        self.cv = threading.Condition()
+        self.pending, self.results, self.round = {}, {}, 0
+
+    def submit(self, rows):
+        me = threading.get_ident()
+        with self.cv:
+            self.pending[me] = rows
+            mine = self.round
+            if len(self.pending) >= self.active:
+                self._dispatch()
+            while self.round == mine:
+                self.cv.wait()
+            return self.results.pop(me)
+
+    def retire(self):
+        with self.cv:
+            self.active -= 1
+            if self.pending and len(self.pending) >= self.active:
+                self._dispatch()
+
+    def _dispatch(self):
+        order = list(self.pending)
+        out = self.batch([r for t in order for r in self.pending[t]])
+        i = 0
+        for t in order:
+            k = len(self.pending[t])
+            self.results[t], i = out[i:i + k], i + k
+        self.pending.clear()
+        self.round += 1
+        self.cv.notify_all()
 
 
 def start_points(h, predicted, prev, rng, with_delay, param0):
@@ -77,31 +123,52 @@ def identify(rollout, gt, h, starts, param0, with_delay=False, batch=None,
             return np.full(n, DIVERGED_RESIDUAL), False
         return (theta - gt).ravel() / np.sqrt(n), True
 
-    def residual(x):
-        return clean(rollout(*unpack(x)))[0]
+    eps = 1e-4   # large enough to stay above the float32 noise of a batched simulator
 
-    jac = None
-    if batch is not None:
-        eps = 1e-4   # large enough to stay above the float32 noise of a batched simulator
-        def jac(x):  # noqa: E306
+    def solve(p, roll):
+        """One start, with `roll(params) -> trajectories` however they get evaluated."""
+        def residual(x):
+            return clean(roll([unpack(x)])[0])[0]
+
+        def jac(x):
             steps = np.eye(len(x)) * eps
             half = len(steps)
-            raw = batch([unpack(x + d) for d in steps] + [unpack(x - d) for d in steps])
+            raw = roll([unpack(x + d) for d in steps] + [unpack(x - d) for d in steps])
             rows, ok = zip(*(clean(t) for t in raw))
             J = (np.asarray(rows[:half]) - np.asarray(rows[half:])) / (2 * eps)
             J[[k for k in range(half) if not (ok[k] and ok[half + k])]] = 0.0
             return J.T
 
-    fits = []
-    for p in starts:
         x0 = pack(p)
         r0 = residual(x0)
         if np.all(r0 == r0[0]) and r0[0] > 0:  # diverged start
-            fits.append((np.inf, np.array(unpack(x0)), x0, None))
-            continue
-        res = least_squares(residual, x0, method="trf", jac=jac or "2-point", bounds=bounds,
-                            xtol=1e-12, ftol=1e-14, gtol=1e-14, max_nfev=400)
-        fits.append((np.sqrt(2 * res.cost), np.array(unpack(res.x)), res.x, res.jac))
+            return (np.inf, np.array(unpack(x0)), x0, None)
+        res = least_squares(residual, x0, method="trf", jac=jac if batch else "2-point",
+                            bounds=bounds, xtol=1e-12, ftol=1e-14, gtol=1e-14, max_nfev=400)
+        return (np.sqrt(2 * res.cost), np.array(unpack(res.x)), res.x, res.jac)
+
+    fits = []
+    if batch is None:
+        serial = lambda rows: [rollout(*row) for row in rows]
+        fits = [solve(p, serial) for p in starts]
+    else:
+        # Every start advances at once, so a simulator that charges the same for eight worlds
+        # as for sixty-four is asked once per round instead of once per start.
+        gang = _Gang(batch, len(starts))
+        fits = [None] * len(starts)
+
+        def worker(k, p):
+            try:
+                fits[k] = solve(p, gang.submit)
+            finally:
+                gang.retire()
+
+        threads = [threading.Thread(target=worker, args=(k, p), daemon=True)
+                   for k, p in enumerate(starts)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
     rmse, params, x, jac_out = min(fits, key=lambda f: f[0])
     cond = np.linalg.cond(jac_out) if jac_out is not None else np.inf
     spread = [f[1].tolist() for f in fits if np.isfinite(f[0])]

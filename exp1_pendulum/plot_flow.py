@@ -70,14 +70,19 @@ def column(arm, rows, with_delay, second_order=False):
             "groups": np.array([r["f_ctrl_nominal"] for r in rows])}
 
 
-def main(absolute=False):
+def main(absolute=False, engine="mujoco"):
+    """`engine` only picks which run the points come from; the schemes, the theory and the
+    drawing are the same, because both engines step the same three MuJoCo integrators."""
     global ROWS
     ROWS = ABSOLUTE if absolute else RELATIVE
     use_house_style()
-    plain, delay = load("flow_mujoco.json"), load("flow_mujoco_delay.json")
+    delay, plain = load(f"flow_{engine}_delay.json"), load(f"flow_{engine}.json")
+    # B has no command advance to represent, so it is fitted with three parameters in both
+    # engines.  A fourth only lets it absorb the h^2 residual, and because that parameter is
+    # not orthogonal to the others it drags J and K_D off their predicted slopes with it.
     sources = {"A": (delay, True), "B": (plain, False), "C": (delay, True)}
     columns = [column(arm, *sources[arm], second_order=True) for arm in ARMS]
-    stem = "fig1_flow_mujoco_absolute" if absolute else "fig1_flow_mujoco"
+    stem = f"fig1_flow_{engine}" + ("_absolute" if absolute else "")
     # Show K_P on the scale the same scheme's J moves on, sign included, where it is a flat line.
     ranges = []
     for col in columns:
@@ -100,4 +105,6 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--absolute", action="store_true",
                     help="plot the raw shifts instead of fractions of the measured value")
-    main(ap.parse_args().absolute)
+    ap.add_argument("--engine", default="mujoco", help="which run to read: mujoco or mjwarp")
+    a = ap.parse_args()
+    main(a.absolute, a.engine)

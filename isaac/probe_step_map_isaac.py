@@ -5,6 +5,9 @@ the articulation in a known state, take a single physics step, and extrapolate h
 the Taylor coefficients of the step map.  PhysX is closed source, so this is the only way to
 learn which map TGS and PGS actually realize.
 
+Only the explicitly held torque can be probed this way: PhysX's own drive reads a velocity
+that set_joint_velocities does not reach, so its force law is measured by probe_drive_law.py.
+
 Run (inside the Isaac venv):  python probe_step_map_isaac.py A
 """
 import sys
@@ -20,8 +23,8 @@ ROOT = Path("/home/youran/RenormalizationRobotics")
 sys.path.insert(0, str(ROOT / "isaac"))
 sys.path.insert(0, str(ROOT / "exp1_pendulum"))
 
-from pendulum_isaac import J0, KD0, KP0, IsaacPendulum  # noqa: E402
-from probe_step_map import CANDIDATES, HS, R, STATES, accel, report  # noqa: E402
+from pendulum_isaac import KD0, KP0, IsaacPendulum  # noqa: E402
+from probe_step_map import HS, R, STATES, accel, report  # noqa: E402
 
 ARM = sys.argv[1] if len(sys.argv) > 1 else "A"
 ITERS = [int(a) for a in sys.argv[2:]] or [32]    # TGS position iterations to test
@@ -48,11 +51,6 @@ def main():
             view.set_joint_efforts((KP0 * (R - th0) - KD0 * v0).astype(np.float32)[:, None])
         else:
             view.set_joint_position_targets(np.full((n, 1), R, dtype=np.float32))
-        # The first step after writing the state uses PhysX's cached velocity in the drive's
-        # damping term, so take two steps and read the map off the second one.
-        world.step(render=False)
-        th1 = view.get_joint_positions().reshape(-1).copy()
-        v1 = view.get_joint_velocities().reshape(-1).copy()
         world.step(render=False)
         return (view.get_joint_positions().reshape(n),
                 view.get_joint_velocities().reshape(n))

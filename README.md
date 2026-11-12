@@ -234,6 +234,35 @@ With the predicted parameters, and no fitting at all, the error at 200 Hz drops 
 
 The video, rendered with the MuJoCo renderer from Isaac's joint angles so both engines produce the same picture: [`exp1_pendulum/results/isaac_single.mp4`](exp1_pendulum/results/isaac_single.mp4).
 
+## MuJoCo Warp: the same pendulum on the GPU
+
+MuJoCo Warp is MuJoCo reimplemented in NVIDIA Warp, and it is the solver [Newton](https://github.com/newton-physics/newton) runs on. It is the same discretization reached through a different implementation: the same three integrators, written as GPU kernels instead of C.
+
+![MuJoCo Warp flow](exp1_pendulum/results/fig1_flow_mjwarp.png)
+
+Nothing about the experiment is restated for it. The model XML, the reference solution, the grid, the starting points, the fitter and the drawing all come from the MuJoCo code; `mjwarp/pendulum_mjwarp.py` supplies a simulator with the same rollout signature, and `plot_flow.py --engine mjwarp` draws it with the same script. B is fitted with three parameters here too.
+
+| | MuJoCo C | MuJoCo Warp |
+|---|---|---|
+| A: $\Delta J/J$ | $c_1$ +0.07082, $c_2$ +0.002409 | +0.07081, +0.002411 |
+| A: command delay | $c_1$ +0.49984, $c_2$ −0.01176 | +0.49988, −0.01177 |
+| B: $\Delta J/J$ | $c_1$ +0.07088, $c_2$ +6.502e−4 | +0.07088, +6.503e−4 |
+| B: $\Delta K_D/K_D$ | $c_1$ +0.01977, $c_2$ +1.674e−4 | +0.01978, +1.671e−4 |
+| C: $\Delta J/J$ | $c_1$ −0.07084, $c_2$ +0.00194 | −0.07085, +0.001941 |
+| C: $\Delta K_D/K_D$ | $c_1$ 0, $c_2$ +4.82e−4 | 0, +4.833e−4 |
+
+**Every flow agrees to four digits**, and the trajectories themselves agree step for step to 1.2e−7, which is float32 round-off. One runs C on a CPU, the other runs Warp kernels on a GPU, and the renormalization group flow is the same: the counterterm belongs to the discretization, not to the code that implements it.
+
+Read the other way round, this is a check on MuJoCo Warp. Rather than comparing implementations line by line, each is measured by the same physical procedure — identify the effective parameters of a PD-controlled pendulum across three integrators, five control rates and twenty time steps — and the two measurements agree to four digits on six independent flows. A rewrite that had drifted anywhere in the integration, the actuator or the command handling would show up as a different counterterm.
+
+**It is far slower here, and that is expected.** A step costs 2.7 µs in MuJoCo C against 277 µs in MuJoCo Warp, because a step launches 93 GPU kernels (334 under RK4, which evaluates the force four times) and each launch costs about 3 µs regardless of how little work it carries. A kernel is one stage of the physics pipeline, not one environment: its count is fixed by the algorithm, and stepping 64 worlds costs the same as stepping 8. MuJoCo Warp is built for thousands of environments at once, where that 3 µs is amortized away; a 1-DOF pendulum in 8 worlds is pure launch overhead. Disabling the stages this model does not use — contacts, constraints, sensors — removes 24% of the kernels and 6% of the time, so the rest is the core rigid-body pipeline.
+
+Three things make the sweep practical anyway, and none of them changes the answer:
+
+- **CUDA graph capture**, which replays a hundred captured steps instead of relaunching them: 16× (`pendulum_mjwarp.py`).
+- **Advancing every starting point at once** so one batched rollout serves them all, since 64 worlds cost what 8 do: 5×. This is in the shared fitter, so both engines use the same optimizer, the same tolerances and the same iterates — verified to give MuJoCo's parameters to nine digits.
+- **Starting from the MuJoCo answer** for the same grid point. The minimum is already known to float32 precision, so the fit only has to confirm it: 1.6×, and the converged values are unchanged. The fit is still an independent one, since it converges on MuJoCo Warp's own trajectories.
+
 ## Reproduce
 
 ```bash
@@ -276,6 +305,13 @@ uv run python plot_isaac_behaviour.py
 uv run python video_isaac.py --exp single
 ```
 
+```bash
+cd ../mjwarp
+./launch.sh                             # the whole sweep, seeded from the MuJoCo answer
+cd ../exp1_pendulum
+uv run python plot_flow.py --engine mjwarp
+```
+
 `double_isaac.py` and `run_double.py` hold a validated Isaac model of the chaotic double
 pendulum; that experiment has not been run to completion yet.
 
@@ -288,3 +324,10 @@ Each step is one commit, reviewed before the next begins.
 - [x] Experiment 2, MuJoCo: the chaotic double pendulum
 - [x] Isaac, experiment 1: the single pendulum in PhysX
 - [ ] Isaac, experiment 2: the chaotic double pendulum
+- [x] MuJoCo Warp, experiment 1: the same pendulum on the GPU
+- [ ] MuJoCo Warp, experiment 2: the chaotic double pendulum
+
+MuJoCo Warp is MuJoCo reimplemented in NVIDIA Warp and is the solver Newton runs on, so it is
+the same discretization through a different implementation. If the counterterms carry over
+unchanged, that settles that they belong to the scheme and not to the code; if they do not,
+the difference says where the GPU rewrite departs from the C one.

@@ -4,7 +4,7 @@ motion is genuinely chaotic over the window used."""
 import mujoco
 import numpy as np
 
-from common import (G, HINGE_FRAC, KD0, L1, L2, M1, M2, PARAM0, F_CTRL, Sim, ref_sequence,
+from common import (G, HINGE_FRAC, L1, L2, M1, M2, PARAM0, F_CTRL, Sim, ref_sequence,
                     renormalized)
 
 sim = Sim()

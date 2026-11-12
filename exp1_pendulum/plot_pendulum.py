@@ -13,7 +13,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from common import F_REF, PARAM0, Sim, ground_truth, ref_sequence
-from figures import IDENT, INK, MEASURED, RENORM, behaviour_figure, use_house_style
+from figures import IDENT, MEASURED, RENORM, behaviour_figure, use_house_style
 from run_gap import F_CTRL, renormalized
 
 ARM = "B"

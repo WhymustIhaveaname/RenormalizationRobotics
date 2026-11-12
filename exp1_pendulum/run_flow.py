@@ -28,12 +28,20 @@ def schedule(f_nominal, h_target):
 WITH_DELAY = "--delay" in sys.argv
 OUT = Path(__file__).parent / "results" / ("flow_mujoco_delay.json" if WITH_DELAY else "flow_mujoco.json")
 
+# A second engine only has to supply a simulator with the same rollout signature, and
+# optionally a way to roll several parameter sets out at once; the sweep itself is shared.
+make_sim = Sim
+make_batch = lambda sim, refs, f_ctrl, dec: None
+# Called with the rows so far after every grid point, so a chain that is interrupted still
+# leaves behind everything it had finished.
+on_row = lambda rows: None
+
 
 def chain(args):
     """Continuation from small to large h at fixed arm and nominal control frequency."""
     arm, f_nominal = args
     rng = np.random.default_rng(1000 * ARMS.index(arm) + f_nominal)
-    sim = Sim(arm)
+    sim = make_sim(arm)
     rows, prev = [], None
     for h_target in H_TARGET:
         f_ctrl, dec = schedule(f_nominal, h_target)
@@ -46,12 +54,13 @@ def chain(args):
         fit = identify(lambda J, kp, kd, delay=0.0: sim.rollout(refs, f_ctrl, dec, J, kp, kd,
                                                                delay),
                        gt, h, start_points(h, predicted, prev, rng, WITH_DELAY),
-                       with_delay=WITH_DELAY)
+                       with_delay=WITH_DELAY, batch=make_batch(sim, refs, f_ctrl, dec))
         meas = sim.rollout(refs, f_ctrl, dec, *PARAM0)
         fit["rmse_measured"] = float(np.sqrt(np.mean((meas - gt) ** 2))) if meas is not None else None
         fit.update(arm=arm, f_ctrl_nominal=f_nominal, f_ctrl=f_ctrl, dec=dec, h=h, f=1.0 / h,
                    seconds=time.perf_counter() - t0)
         rows.append(fit)
+        on_row(rows)
         prev = np.array(fit["params"])
         p = prev[:3] / PARAM0
         d = f" d/h={prev[3] / h:.4f}" if WITH_DELAY else ""

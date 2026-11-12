@@ -28,8 +28,8 @@ def dump_single():
     h = 1.0 / (F_CTRL * DEC)
     world = World(physics_dt=h, stage_units_in_meters=1.0, backend="numpy")
     out = {}
+    sim = IsaacPendulum(world, "A", 2)   # one scene, re-used with each arm's control law
     for arm in ("A", "B", "C"):
-        sim = IsaacPendulum(world, arm, 2) if arm == "A" else sim
         sim.arm = arm
         refs = mj.ref_sequence(F_CTRL, mj.F_REF)
         gt = mj.ground_truth(refs, F_CTRL, DEC)[DEC - 1::DEC]
