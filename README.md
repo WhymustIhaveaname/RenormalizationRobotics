@@ -195,27 +195,36 @@ whose fixed point is
 
 $$\tau = \frac{K_P (r - \theta) - (\delta K_P + K_D)\dot\theta}{1 + \delta(\delta K_P + K_D)/J}$$
 
-**so the damping the joint feels is $K_D + \delta K_P$, not $K_D$.** PGS runs this at $\delta = h$; TGS advances time inside its position iterations, so there $\delta = h/N$ with $N$ = `solverPositionIterationCount`, 32 by default. Backward error analysis of that map gives
+**so the damping the joint feels is $K_D + \delta K_P$, not $K_D$.** PGS runs this at $\delta = h$. TGS advances time inside its position iterations, so there $\delta = h/N$ with $N$ = `solverPositionIterationCount`, 32 by default — **but gravity is not substepped with it**: `PxSceneFlag::eENABLE_EXTERNAL_FORCES_EVERY_ITERATION_TGS` is off by default, so `DyTGSDynamics.cpp` integrates external forces once over the whole step before the iterations start. Composing $N$ substeps of the drive alone would make $N$ cancel out of the $h^2$ terms; it does not, and that single fact is what the data insists on. Backward error analysis of the step as PhysX really builds it, gravity once over $h$ followed by $N$ drive substeps of $h/N$, gives
 
-$$J^\star - J = -\frac{\delta K_D}{2} + \delta^2\frac{J K_P + K_D^2}{12 J}, \qquad K_P^\star = K_P, \qquad K_D^\star - K_D = -\delta K_P + \delta^2 \frac{K_P K_D}{12 J}$$
+$$J^\star - J = -\frac{h K_D}{2N} + h^2\left[-\frac{K_P}{12} + \frac{K_P}{6N^2} + \frac{K_D^2}{12 J N^2}\right]$$
+
+$$K_P^\star - K_P = h^2 \frac{K_P^2 (1 - N^2)}{12 J N^2}, \qquad K_D^\star - K_D = -\frac{h K_P}{N} + h^2 \frac{K_D K_P (2 - N^2)}{12 J N^2}$$
+
+At $N = 1$ these reduce exactly to PGS, where the $h^2$ terms are $+(JK_P + K_D^2)/12J$, $0$ and $+K_P K_D / 12 J$. At large $N$ all three relative $h^2$ coefficients tend to the same value $-K_P/12J$ — a common factor on $J$, $K_P$ and $K_D$ is indistinguishable from a change in gravity, which is exactly the operator the un-substepped gravity leaves behind.
 
 For the explicitly held torque there is nothing to read, so the step map was measured instead: put the simulator in a known state, take one step, subtract the known $h^1$ part and extrapolate $h \to 0$ (`exp1_pendulum/probe_step_map.py`, which identifies MuJoCo's three arms to 0.07%, and `isaac/probe_step_map_isaac.py`). The answer is $M_{2\theta} = f$ and $M_{2v} = 0$ whatever the iteration count: **semi-implicit Euler**, so MuJoCo's Euler counterterms apply unchanged.
 
-| | $c_1$ identified | $c_1$ predicted |
-|---|---|---|
-| explicit PD + TGS: rotor inertia$/J$ | +0.0634 per ms | +0.0712 ($K_D/2J$) |
-| explicit PD + TGS: command delay | 0.56 per ms | 0.50 ($h/2$) |
-| **PhysX drive + PGS: rotor inertia$/J$** | **−0.0706 per ms** | −0.0712 |
-| **PhysX drive + PGS: $\Delta K_D/K_D$** | **−0.0399 per ms** | −0.0400 ($-K_P/K_D$) |
-| PhysX drive + PGS: command delay | 0.50 per ms | 0.50 |
-| PhysX drive + TGS: rotor inertia$/J$ | −0.00212 per ms | −0.00222 ($-K_D/2JN$) |
-| PhysX drive + TGS: $\Delta K_D/K_D$ | −0.00132 per ms | −0.00125 ($-K_P/K_D N$) |
+Fitted as $c_1 h + c_2 h^2$ through the origin, on the same grid as MuJoCo:
 
-The PGS column matches to four digits with $R^2$ = 0.999, including the $h^2$ curvature of $\Delta K_D$: 4.66e−4 against the predicted 4.75e−4 per ms². $\Delta K_P$ is predicted not to flow and does not, in any scheme.
+| | identified $(c_1, c_2)$ | predicted $(c_1, c_2)$ | $R^2$ |
+|---|---|---|---|
+| explicit PD + TGS: rotor inertia$/J$ | (+0.0671, +2.9e−3) | (+0.0712, +2.2e−3) | 0.995 |
+| explicit PD + TGS: command delay | (0.52, −0.016) | (0.50, 0) | 0.992 |
+| **PhysX drive + PGS: rotor inertia$/J$** | **(−0.0712, +2.05e−3)** | (−0.0712, +2.16e−3) | 0.9998 |
+| **PhysX drive + PGS: $\Delta K_D/K_D$** | **(−0.0402, +5.4e−4)** | (−0.0400, +4.7e−4) | 0.9998 |
+| PhysX drive + PGS: $\Delta K_P/K_P$ | (+1e−5, −3e−6) | (0, 0) | — |
+| PhysX drive + TGS: rotor inertia$/J$ | (−0.00257, −4.1e−4) | (−0.00222, −4.7e−4) | 0.951 |
+| PhysX drive + TGS: $\Delta K_D/K_D$ | (−0.00152, −4.0e−4) | (−0.00125, −4.7e−4) | 0.978 |
+| **PhysX drive + TGS: $\Delta K_P/K_P$** | **(−2e−5, −4.6e−4)** | (0, −4.7e−4) | 0.997 |
 
-**The counterterm is a property of the discretization, not of the engine**, and the sign is a property of the scheme. An explicitly held torque gives $+hK_D/2$ in both engines; the implicit drive gives $-\delta K_D/2$, the same flip MuJoCo shows for `implicitfast`. TGS is not a different physics from PGS: it is the same drive run at a step 32 times smaller, which is also why it is the most accurate scheme out of the box — its measured-parameter error at $h$ = 1 ms is 1.8e−4 rad, 31× below PGS.
+The PGS column matches to four digits. Under TGS the fit trades $c_1$ against $c_2$, so the fair comparison is the total shift at the coarsest step: at $h$ = 5 ms theory and experiment give −0.0229 against −0.0230 for the inertia, −0.0181 against −0.0177 for $K_D$, and −0.0119 against −0.0115 for $K_P$ — **within 3% on all three rows, including the one the theory says is zero at first order**.
 
-**Only well-conditioned control rates are plotted.** The pendulum's settling time is $2J/K_D$ = 14 ms. At $f_\mathrm{ctrl}$ = 100 Hz the control period is shorter than that and every sample carries information about the parameters; at 10 Hz the pendulum reaches the static equilibrium for each held command within the first 14 ms of a 100 ms period, so most of the trajectory says nothing and the fit is ill-conditioned — its error with the measured parameters is six times *smaller* there, which is the symptom, not a success.
+Each map is checked numerically as well as symbolically: feeding its effective parameters to an exact integrator drops the error from $O(h)$ to $O(h^2)$ to $O(h^3)$. Under TGS with gravity on it stops at $O(h^2)$, and switching gravity off recovers the third order — the floor is the gravitational obstruction derived for MuJoCo, not a missing counterterm.
+
+**The counterterm is a property of the discretization, not of the engine**, and the sign is a property of the scheme. An explicitly held torque gives $+hK_D/2$ in both engines; the implicit drive gives $-hK_D/2N$, the same flip MuJoCo shows for `implicitfast`. TGS is the same drive at a 32× smaller step, which is also why it is the most accurate scheme out of the box — its measured-parameter error at $h$ = 1 ms is 1.8e−4 rad, 31× below PGS.
+
+**Only 50, 100 and 200 Hz are plotted.** The pendulum's settling time is $2J/K_D$ = 14 ms. At those rates the control period is comparable or shorter, so every sample carries information about the parameters; at 10 Hz the pendulum reaches the static equilibrium for each held command within the first 14 ms of a 100 ms period, most of the trajectory says nothing, and the fit scatters. The symptom is visible in the data: at 10 Hz the error with the *measured* parameters is six times smaller, because the trajectory barely depends on them.
 
 ### Behaviour
 
@@ -224,10 +233,6 @@ The PGS column matches to four digits with $R^2$ = 0.999, including the $h^2$ cu
 With the predicted parameters, and no fitting at all, the error at 200 Hz drops 22× and at 1 kHz 182×. Below 110 Hz the measured parameters diverge outright while the renormalized ones keep running — the same stability rescue MuJoCo showed.
 
 The video, rendered with the MuJoCo renderer from Isaac's joint angles so both engines produce the same picture: [`exp1_pendulum/results/isaac_single.mp4`](exp1_pendulum/results/isaac_single.mp4).
-
-### Where the second order is not enough
-
-Once $\delta = h/N$ is used, TGS's first-order counterterms come out right, but its $h^2$ coefficient does not. Composing $N$ substeps predicts $c_2 \propto 1/N^2$; sweeping $N$ from 1 to 32 instead gives $c_1 \times N$ constant at −0.070 against the predicted −0.0712, while $c_2$ changes sign between $N$ = 1 and 4 and then saturates near −5e−4. Something inside a TGS step happens once per step rather than once per substep: it cancels at first order and survives at second. At $N$ = 1, TGS reduces exactly to PGS — $c_1$ = −0.0701 and $c_2$ = +1.75e−3 against −0.0712 and +2.16e−3.
 
 ## Reproduce
 
@@ -241,6 +246,8 @@ uv run python run_flow.py         # effective parameters on a uniform grid of ti
 uv run python run_flow.py --delay # same, also identifying the command delay
 uv run python plot_flow.py        # flow figure
 uv run python video.py            # pendulum video (needs EGL)
+uv run python derive_second_order.py   # every step map's counterterms, symbolic then numeric
+uv run python probe_step_map.py        # which step map each arm realizes, measured
 
 cd ../exp2_double_pendulum
 uv run python sanity_check.py     # inertia, reference convergence, chaos
@@ -257,12 +264,13 @@ the same `figures.py` as the MuJoCo ones, so the two cannot drift apart.
 
 ```bash
 cd isaac
-# flow: the MuJoCo grid, one 2 Hz command, as exp1/run_flow.py uses
-$ISAAC_VENV/bin/python run_single.py --arm A --delay --points 8 \
-    --h-min 0.25 --h-max 5 --single-drive          # also --arm B, C
-# behaviour: five commands over f = 50-1000 Hz, as exp1/run_gap.py uses
-$ISAAC_VENV/bin/python run_single.py --arm A --delay --points 8 --h-min 1 --h-max 20
+# flow: the same (f_ctrl, decimation) grid and one 2 Hz command as exp1/run_flow.py.
+# Five control rates x h = 0.5 to 5 ms, about 6 h per arm; --resume fills gaps only.
+$ISAAC_VENV/bin/python run_single.py --arm A           # also --arm B, C
 $ISAAC_VENV/bin/python dump_traj.py single
+# which step map does each scheme realize, and how does it depend on the iteration count
+$ISAAC_VENV/bin/python probe_step_map_isaac.py A 1 4 32
+$ISAAC_VENV/bin/python probe_drive_law.py B
 uv run python plot_isaac_flow.py        # figures, in the project venv
 uv run python plot_isaac_behaviour.py
 uv run python video_isaac.py --exp single

@@ -24,31 +24,40 @@ from figures import flow_figure, use_house_style  # noqa: E402
 RESULTS = ROOT / "exp1_pendulum" / "results"
 KP0, KD0 = 80.0, 2.0
 J0 = 0.45359237 * 0.3048 ** 2 / 3  # the measured rod inertia
-BASE = np.array([0.0, KP0, KD0, 0.0])
-# (key, name, sign of the inertia counterterm, number of substeps the drive sees).
-# An explicitly held torque renormalizes like MuJoCo's Euler, +h K_D/2; PhysX's own drive is
-# implicit and renormalizes the other way, like implicitfast.  TGS advances time inside its
-# position iterations, so the drive there sees h / N rather than h.
+# The shared fitter works in total inertia, so the stored first parameter is J, not the
+# rotor inertia the joint carries on top of the rod.
+BASE = np.array([J0, KP0, KD0, 0.0])
 TGS_ITERS = 32  # Isaac's default solverPositionIterationCount
+# (key, column title, which step map it realizes, substeps the drive sees)
 SCHEMES = [("A", "explicit PD + TGS", "euler", 1),
            ("B", "PhysX drive + TGS", "drive", TGS_ITERS),
            ("C", "PhysX drive + PGS", "drive", 1)]
-# Relative counterterms as (per ms, per ms^2); see derive_second_order.py for the derivation.
-#   semi-implicit Euler:  J* - J = +h K_D/2,          K_D* - K_D = 0
-#   PhysX force drive:    J* - J = -h K_D/2,          K_D* - K_D = -h K_P
-#   both:                 the h^2 parts are (J K_P + K_D^2)/12J and K_P K_D/12J
-INERTIA_C1, INERTIA_C2 = KD0 / 2 / J0 * 1e-3, (J0 * KP0 + KD0**2) / (12 * J0) / J0 * 1e-6
-DAMPING_C2 = KP0 / (12 * J0) * 1e-6
-DAMPING_C1 = {"euler": 0.0, "drive": -KP0 / KD0 * 1e-3}
-SIGN = {"euler": +1, "drive": -1}
+# Counterterms from exp1_pendulum/derive_second_order.py, as (per ms, per ms^2) of the
+# relative shift.  PhysX's drive is an implicit spring run at delta = h / N, but gravity is not
+# substepped - eENABLE_EXTERNAL_FORCES_EVERY_ITERATION_TGS is off by default, so it is applied
+# once over the whole step.  That is what makes N enter the h^2 terms the way it does; at N = 1
+# the expressions reduce to PGS exactly.  An explicitly held torque instead makes PhysX behave
+# as semi-implicit Euler, whatever the iteration count (measured in probe_step_map_isaac.py).
+
+
+def drive_theory(n):
+    return {0: (-KD0 / (2 * n) / J0 * 1e-3,
+                (-KP0 / 12 + KP0 / (6 * n**2) + KD0**2 / (12 * J0 * n**2)) / J0 * 1e-6),
+            1: (0.0, KP0 * (1 - n**2) / (12 * J0 * n**2) * 1e-6),
+            2: (-KP0 / n / KD0 * 1e-3, KP0 * (2 - n**2) / (12 * J0 * n**2) * 1e-6),
+            3: (0.5 / n, 0.0)}
+
+
+EULER_THEORY = {0: (KD0 / 2 / J0 * 1e-3, (J0 * KP0 + KD0**2) / (12 * J0) / J0 * 1e-6),
+                1: (0.0, 0.0),
+                2: (0.0, KP0 / (12 * J0) * 1e-6),
+                3: (0.5, 0.0)}
 
 
 def theory(kind, n):
-    """Counterterms per parameter index for a scheme whose drive sees h / n."""
-    return {0: (SIGN[kind] * INERTIA_C1 / n, INERTIA_C2 / n**2),
-            1: (0.0, 0.0),
-            2: (DAMPING_C1[kind] / n, DAMPING_C2 / n**2),
-            3: (0.5 / n, 0.0)}
+    return EULER_THEORY if kind == "euler" else drive_theory(n)
+
+
 # (parameter index, y label, unit).  The theory comes from theory() above.
 ABSOLUTE = [(0, r"rotor inertia  ($10^{-3}$ kg m$^2$)", 1e-3),
             (2, r"$\Delta K_D = K_D^\star - K_D$  ($10^{-2}$ N m s/rad)", 1e-2),
@@ -61,7 +70,7 @@ RELATIVE = [(0, r"rotor inertia $/\, J$", J0),
             (1, r"$\Delta K_P / K_P$", KP0),
             (3, r"command delay $d^\star$ (ms)", 1e-3)]
 ROWS = RELATIVE
-KP_ROW = 2  # K_P is the third row of the figure
+KP_ROW = 2  # the third row of the figure, whose y range follows the inertia row above it
 
 CAPTION = ("Isaac Sim 5.1 / PhysX, single pendulum, on the same $h$ grid as the MuJoCo figure.\n"
            "First-order theory (solid); fit (dashed), $c_1 h + c_2 h^2$ through the origin, so "
@@ -85,12 +94,11 @@ def column(key, name, kind, substeps, stem):
     return out
 
 
-# Only the rates whose fits are trustworthy.  At 10 and 20 Hz the pendulum settles within each
-# control period (settling time 2J/K_D = 14 ms against a 100 ms period), so most samples carry no
-# information about the parameters and the fit lands in a local minimum - its post-fit RMSE
-# there is five times worse than at the faster rates.  The 200 Hz chain was not finished.
-F_CTRL_USED = (50, 100)
-F_CTRL_COLOR = {50: "#2a78d6", 100: "#104281"}
+# 10 and 20 Hz are dropped: the pendulum settles inside each control period there
+# (settling time 2J/K_D = 14 ms against 100 and 50 ms), so those samples carry little
+# information about the parameters and only scatter the fit.
+F_CTRL_USED = (50, 100, 200)
+F_CTRL_COLOR = {50: "#5598e7", 100: "#2a78d6", 200: "#104281"}
 
 
 def main(stem="isaac_single_grid", absolute=False):
@@ -113,7 +121,8 @@ def main(stem="isaac_single_grid", absolute=False):
     flow_figure(columns, [label for _, label, _ in ROWS],
                 [RESULTS / f"{stem_out}.{e}" for e in ("png", "pdf")],
                 h_max, CAPTION, f_ticks, quadratic=True, show_rmse=False,
-                no_fit=() if absolute else (KP_ROW,),
+                # K_P does flow here: under TGS the h^2 counterterm is -K_P^2/12J.
+                no_fit=(),
                 row_ylim=None if absolute else {KP_ROW: ranges},
                 point_colors=F_CTRL_COLOR if graded else None,
                 legend_entries=[(rf"$f_\mathrm{{ctrl}} \approx$ {fc} Hz", c)

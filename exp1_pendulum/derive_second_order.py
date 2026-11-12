@@ -15,9 +15,14 @@ Three step maps are covered:
             (MuJoCo's RK4 arm B).
   drive     PhysX's own joint drive, read off DyCpuGpuArticulation.h: an implicit spring with
             step delta, iterated to its fixed point, after which the position is integrated with
-            the new velocity.  PGS uses delta = h.  TGS advances time inside its position
-            iterations, so there delta = h / N with N = solverPositionIterationCount, and the
-            counterterms are the same expressions evaluated at h / N.
+            the new velocity.  PGS uses delta = h.
+  tgs       the same drive under TGS, which advances time inside its position iterations:
+            delta = h / N with N = solverPositionIterationCount.  Gravity is NOT substepped -
+            PxSceneFlag::eENABLE_EXTERNAL_FORCES_EVERY_ITERATION_TGS is off by default, so
+            DyTGSDynamics.cpp integrates external forces once over the full step before the
+            iterations start.  That single fact is first order in h: substepping gravity as
+            well gives the wrong counterterms for every parameter.  At N = 1 this reduces to
+            the PGS expressions exactly.
 
 Isaac's explicit PD is not the held-torque map: its measured step map (probe_step_map.py and
 isaac/probe_step_map_isaac.py) is semi-implicit Euler, whatever the iteration count.
@@ -116,13 +121,42 @@ def physx_drive_map():
     return tuple(sp.simplify(e.coeff(h, k)) for e, k in ((st, 2), (sv, 2), (st, 3), (sv, 3)))
 
 
+def tgs_drive_map(n):
+    """Taylor coefficients of a TGS step: gravity once over h, then n drive substeps of h / n."""
+    d = h / n
+    grav = -c * sp.sin(th) / J
+    fd = (KP * (r - th) - KD * v) / J                  # the drive alone
+    e = sp.Symbol('delta', positive=True)
+    v1 = v + e * (KP * (r - th) - (e * KP + KD) * v) / (J + e * (e * KP + KD))
+    sv = sp.series(sp.expand(v1 - v), e, 0, 4).removeO()
+    st = sp.series(sp.expand(th + e * v1 - th - e * v), e, 0, 4).removeO()
+    D0d = lambda x: v * sp.diff(x, th) + fd * sp.diff(x, v)
+    a1 = st.coeff(e, 2) - fd / 2
+    b1 = sv.coeff(e, 2) - D0d(fd) / 2
+    D1d = lambda x: a1 * sp.diff(x, th) + b1 * sp.diff(x, v)
+    a2 = st.coeff(e, 3) - (D0d(a1) + b1) / 2 - D0d(fd) / 6
+    b2 = sv.coeff(e, 3) - (D0d(b1) + D1d(fd)) / 2 - D0d(D0d(fd)) / 6
+    # the drive runs for a time h as the flow of its own modified field, evaluated at delta
+    gx, gv = v + d * a1 + d**2 * a2, fd + d * b1 + d**2 * b2
+    Dg = lambda x: gx * sp.diff(x, th) + gv * sp.diff(x, v)
+    after = [y + h * g + h**2 / 2 * Dg(g) + h**3 / 6 * Dg(Dg(g))
+             for y, g in ((th, gx), (v, gv))]
+    after = [sp.expand(x.subs(v, v + h * grav)) for x in after]   # gravity applied first
+    sT = sp.series(sp.expand(after[0] - th - h * v), h, 0, 4).removeO()
+    sV = sp.series(sp.expand(after[1] - v - h * f), h, 0, 4).removeO()
+    return tuple(sp.simplify(x.coeff(h, k)) for x, k in ((sT, 2), (sV, 2), (sT, 3), (sV, 3)))
+
+
+TGS_ITERS = 32          # Isaac's default solverPositionIterationCount
 ARMS = (("Euler: semi-implicit, explicit PD (MuJoCo A)",
          (f, sp.Integer(0), sp.Integer(0), sp.Integer(0))),
         ("implicit damping: J -> J + h K_D (MuJoCo C, PhysX drive)",
          (f, -KD*f/J, -KD*f/J, KD**2*f/J**2)),
         ("held torque: exact dynamics (MuJoCo B)",
          (f / 2, A1 / 2, A1 / 6, A2 / 6)),
-        ("drive: PhysX force drive (Isaac C at h, Isaac B at h/N)", physx_drive_map()))
+        ("drive: PhysX force drive under PGS (Isaac C)", physx_drive_map()),
+        (f"tgs: the same drive under TGS, {TGS_ITERS} substeps (Isaac B)",
+         tgs_drive_map(TGS_ITERS)))
 
 
 def derive():
@@ -152,10 +186,13 @@ def step_map(kind, hh, th0, v0, tend, num):
             sol = solve_ivp(lambda _t, y: [y[1], (-cv * np.sin(y[0]) + tau) / Jv],
                             (0, hh), [t_, v_], rtol=1e-13, atol=1e-14, method="DOP853")
             t_, v_ = sol.y[0, -1], sol.y[1, -1]
-        elif kind.startswith("drive"):
-            v_ += hh * (-cv * np.sin(t_)) / Jv
-            v_ += hh * (KPv * (r0 - t_) - (hh * KPv + KDv) * v_) / (Jv + hh * (hh * KPv + KDv))
-            t_ += hh * v_
+        elif kind.startswith("drive") or kind.startswith("tgs"):
+            n = TGS_ITERS if kind.startswith("tgs") else 1
+            v_ += hh * (-cv * np.sin(t_)) / Jv          # gravity once over the whole step
+            dd = hh / n
+            for _ in range(n):                          # then the drive, substep by substep
+                v_ += dd * (KPv * (r0 - t_) - (dd * KPv + KDv) * v_) / (Jv + dd * (dd * KPv + KDv))
+                t_ += dd * v_
         else:
             denom = Jv + hh * KDv if kind.startswith("implicit") else Jv
             v_ += hh * (-cv * np.sin(t_) + KPv * (r0 - t_) - KDv * v_) / denom

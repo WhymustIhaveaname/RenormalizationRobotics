@@ -39,9 +39,9 @@ def identify(rollout, gt, h, starts, param0, with_delay=False, batch=None,
 
     `rollout(J, kp, kd, delay)` returns the simulated angles, already concatenated over every
     command, so that one parameter set is fitted to all of them at once; None means it diverged.
-    `batch(X)` is optional: given several parameter vectors in the scaled space it returns one
-    residual row each, which lets a simulator that steps many copies at once evaluate the
-    Jacobian in a single rollout.  It changes what a Jacobian costs, not what the fit is.
+    `batch(params)` is optional: given several parameter vectors it returns one trajectory each,
+    which lets a simulator that steps many copies at once evaluate the Jacobian in a single
+    rollout.  It changes what a Jacobian costs, not what the fit is.
     `inertia_floor` switches the first parameter from log space to a linear coordinate in units
     of h K_D / 2, bounded so the total inertia stays above zero.  A joint that carries no rotor
     inertia of its own has nothing to take a logarithm of, and its counterterm may be negative.
@@ -68,20 +68,29 @@ def identify(rollout, gt, h, starts, param0, with_delay=False, batch=None,
         x = np.append(x, (p[3] if len(p) > 3 else 0.0) / h) if with_delay else x
         return np.clip(x, bounds[0] * 0.99, bounds[1] * 0.99) if linear else x
 
-    def residual(x):
-        theta = rollout(*unpack(x))
+    def clean(theta):
+        """A rollout that blew up is reported as a large residual, never as NaN."""
         if theta is None:
-            return np.full(n, DIVERGED_RESIDUAL)
-        return (np.asarray(theta) - gt).ravel() / np.sqrt(n)
+            return np.full(n, DIVERGED_RESIDUAL), False
+        theta = np.asarray(theta)
+        if not np.all(np.isfinite(theta)) or np.max(np.abs(theta)) > 1e3:
+            return np.full(n, DIVERGED_RESIDUAL), False
+        return (theta - gt).ravel() / np.sqrt(n), True
+
+    def residual(x):
+        return clean(rollout(*unpack(x)))[0]
 
     jac = None
     if batch is not None:
         eps = 1e-4   # large enough to stay above the float32 noise of a batched simulator
         def jac(x):  # noqa: E306
             steps = np.eye(len(x)) * eps
-            rows = batch([unpack(x + d) for d in steps] + [unpack(x - d) for d in steps])
             half = len(steps)
-            return ((np.asarray(rows[:half]) - np.asarray(rows[half:])) / (2 * eps)).T
+            raw = batch([unpack(x + d) for d in steps] + [unpack(x - d) for d in steps])
+            rows, ok = zip(*(clean(t) for t in raw))
+            J = (np.asarray(rows[:half]) - np.asarray(rows[half:])) / (2 * eps)
+            J[[k for k in range(half) if not (ok[k] and ok[half + k])]] = 0.0
+            return J.T
 
     fits = []
     for p in starts:

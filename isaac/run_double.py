@@ -62,8 +62,7 @@ def main():
         starts = mj.start_points(h, predicted, prev, np.random.default_rng(int(h * 1e6)), False)
         t0 = time.perf_counter()
         out = mj.identify(lambda a, kp, kd: run([(a, kp, kd)])[0], gt, h, starts,
-                          batch=lambda rows: [(t - gt).ravel() / np.sqrt(gt.size)
-                                              for t in run(rows)])
+                          batch=lambda rows: list(run(rows)))
         prev = np.array(out["params"])
 
         rmse = lambda p: float(np.sqrt(np.mean((run([p])[0] - gt) ** 2)))

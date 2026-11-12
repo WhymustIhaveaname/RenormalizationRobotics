@@ -73,7 +73,7 @@ def sweep(world, arm):
             out = mj.identify(lambda J, kp, kd, d=0.0: run([(J, kp, kd, d)])[0], gt, h,
                               mj.start_points(h, pred, None, np.random.default_rng(n), True),
                               with_delay=True,
-                              batch=lambda rows: [(t - gt) / np.sqrt(gt.size) for t in run(rows)])
+                              batch=lambda rows: list(run(rows)))
             p_ = np.array(out["params"])
             hs.append(h * 1e3)
             arm_.append((p_[0] - J0) / J0)
