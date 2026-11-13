@@ -100,7 +100,7 @@ def main(out):
             img.paste(Image.fromarray(scene))
             draw = ImageDraw.Draw(img)
             error_strip(draw, STRIP_BOX, errors, i, ERR_LIM, ERR_TICKS,
-                        "simulated − real (rad)", small)
+                        "error", small)
             draw.text((16, 14), f"{F_CTRL * DEC} Hz physics, {F_REF:g} Hz command",
                       fill=(11, 11, 11), font=font)
             draw.text((16, 40), f"t = {i / (F_CTRL * DEC):4.2f} s   ({SPEED:g}x speed)",
