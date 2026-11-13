@@ -20,7 +20,7 @@ from PIL import Image, ImageDraw
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from common import F_REF, G, L, M, PARAM0, Sim, ground_truth, ref_sequence
-from figures import error_strip, gif_font, save_gif
+from figures import error_strip, gif_font, pi_tick, save_gif
 from run_gap import F_CTRL, renormalized
 
 ARM = "B"
@@ -30,7 +30,9 @@ FPS, SPEED = 25, 0.25
 WIDTH, HEIGHT = 560, 440  # the scene; the error strip goes underneath
 STRIP_H = 150
 STRIP_BOX = (70, HEIGHT + 36, WIDTH - 20, HEIGHT + STRIP_H - 14)
-ERR_LIM, ERR_TICKS = (-0.06, 0.06), ((0.05, "0.05"), (0, "0"), (-0.05, "−0.05"))  # rad
+ERR_LIM = (-0.07, 0.07)  # rad
+ERR_TICK, ERR_TEXT = pi_tick(ERR_LIM[1])
+ERR_TICKS = ((ERR_TICK, ERR_TEXT), (0, "0"), (-ERR_TICK, "−" + ERR_TEXT))
 VIEW_H, VIEW_Z = 0.62, -0.04  # m: height of the view and its centre
 # name, colour, rod radius, depth (the camera looks along +y, so smaller y is in front)
 TRACES = (("real", "0.80 0.79 0.77 1", 0.013, 0.04),

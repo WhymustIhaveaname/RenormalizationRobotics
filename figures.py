@@ -271,7 +271,8 @@ def error_strip(draw, box, errors, n, ylim, ticks, label, font):
     """An ECG-like strip for an animation frame: each simulator's error up to sample n.
 
     `box` is the plotting area (left, top, right, bottom), spanning every sample of the clip;
-    `ylim` is (bottom, top) in the errors' units and must hold every value, so nothing is clipped;
+    `ylim` is (bottom, top) in the errors' units and must hold every value drawn, so nothing is
+    clipped;
     `errors` is [(values, rgb)], drawn in order; `ticks` is [(value, text)].
     """
     left, top, right, bottom = box
@@ -285,7 +286,7 @@ def error_strip(draw, box, errors, n, ylim, ticks, label, font):
         draw.text((left - 8, y(v)), text, fill=(82, 81, 78), font=font, anchor="rm")
     draw.line([(left, y(0)), (right, y(0))], fill=(204, 202, 197), width=2)
     for values, rgb in errors:
-        assert lo <= values.min() and values.max() <= hi, "the strip would clip the error"
+        assert lo <= values[:n + 1].min() and values[:n + 1].max() <= hi, "the strip would clip"
         x = left + np.arange(n + 1) / (len(values) - 1) * (right - left)
         if n > 0:
             draw.line(list(zip(x, y(values[:n + 1]))), fill=rgb, width=2, joint="curve")
@@ -294,3 +295,11 @@ def error_strip(draw, box, errors, n, ylim, ticks, label, font):
 def gif_font(size):
     """The figures' own typeface, DejaVu Sans, which unlike Pillow's default has θ, π and −."""
     return ImageFont.truetype(font_manager.findfont("DejaVu Sans"), size)
+
+
+def pi_tick(x):
+    """The largest 1, 2 or 5 times a power of ten, times π, that does not exceed x, and its label.
+    Written in π, an angle reads as radians at once."""
+    k = 10.0 ** np.floor(np.log10(x / np.pi))
+    m = max(c * k for c in (1, 2, 5) if c * k * np.pi <= x)
+    return m * np.pi, f"{m:g}π" if m > 1 else "π" if m == 1 else f"π/{round(1 / m)}"

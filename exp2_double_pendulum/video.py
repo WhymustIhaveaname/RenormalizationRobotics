@@ -8,7 +8,11 @@ is orthographic, so drawing the chains at different depths does not change their
 
 Underneath, a strip traces each simulator's error on the free joint as the clip runs.  The error
 lives on the universal cover R of the joint's circle, not on the circle: each extra turn the
-simulated link makes adds 2 pi to it, rather than folding it back to -pi.
+simulated link makes adds 2 pi to it, rather than folding it back to -pi.  The strip's range
+follows the largest error drawn so far: the errors grow by three orders of magnitude, and a fixed
+range would flatten the first second, where one is 20 to 70 times the other.  Once an error passes
+half a turn the link is lost and the error runs away; the range then jumps to its final size and
+stays there, so the climb shows instead of riding the top edge.
 """
 
 import os
@@ -25,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from common import (F_CTRL, F_DRIVE, G, HINGE_FRAC, L1, L2, M1, M2, PARAM0, Sim, ref_sequence,
                     renormalized)
-from figures import error_strip, gif_font, save_gif
+from figures import error_strip, gif_font, pi_tick, save_gif
 
 DEC = 4  # 200 Hz physics for both simulators, and the sampling rate of the animation
 T_END = 2.5  # s, the window of the behaviour figure's panel (a)
@@ -33,8 +37,8 @@ FPS, SPEED = 25, 0.25
 WIDTH, HEIGHT = 560, 440  # the scene; the error strip goes underneath
 STRIP_H = 150
 STRIP_BOX = (70, HEIGHT + 36, WIDTH - 20, HEIGHT + STRIP_H - 14)
-ERR_LIM = (-2.0, 44.0)  # rad; holds the whole error, which reaches 13.6 pi
-ERR_TICKS = tuple((k * np.pi, f"{k}π" if k else "0") for k in (0, 4, 8, 12))
+ERR_FLOOR = np.pi / 20  # rad: the strip's smallest half-range, while both errors are small
+LOST = np.pi  # rad: past half a turn the free link is lost, and the strip shows its full range
 VIEW_H, VIEW_Z = 0.74, -0.165  # m: height of the view and its centre
 # name, colour, rod radius, depth (the camera looks along +y, so smaller y is in front)
 TRACES = (("real", "0.80 0.79 0.77 1", 0.013, 0.04),
@@ -100,6 +104,8 @@ def main(out):
     stride = max(1, round(F_CTRL * DEC * SPEED / FPS))
     font, small = gif_font(17), gif_font(14)
     errors = [(traj[:, k, 1] - traj[:, 0, 1], rgb) for k, (_, rgb) in zip((1, 2), LABELS[1:])]
+    drawn_max = np.maximum.accumulate(np.max([np.abs(e) for e, _ in errors], axis=0))
+    drawn_max[drawn_max > LOST] = drawn_max[-1]
 
     frames = []
     with mujoco.Renderer(model, HEIGHT, WIDTH) as renderer:
@@ -111,7 +117,10 @@ def main(out):
             img = Image.new("RGB", (WIDTH, HEIGHT + STRIP_H), tuple(scene[-1, 0]))
             img.paste(Image.fromarray(scene))
             draw = ImageDraw.Draw(img)
-            error_strip(draw, STRIP_BOX, errors, i, ERR_LIM, ERR_TICKS,
+            half = 1.15 * max(drawn_max[i], ERR_FLOOR)
+            tick, text = pi_tick(half)
+            ticks = ((tick, text), (0, "0"), (-tick, "−" + text))
+            error_strip(draw, STRIP_BOX, errors, i, (-half, half), ticks,
                         "error", small)
             draw.text((16, 14), f"{F_CTRL * DEC} Hz physics, {F_DRIVE:g} Hz command",
                       fill=(11, 11, 11), font=font)
