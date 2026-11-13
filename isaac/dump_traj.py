@@ -13,7 +13,7 @@ app = SimulationApp({"headless": True})
 
 import numpy as np  # noqa: E402
 
-ROOT = Path("/home/youran/RenormalizationRobotics")
+ROOT = Path(__file__).resolve().parent.parent  # the repo, wherever it is checked out
 sys.path.insert(0, str(ROOT / "isaac"))
 
 DEC = 4  # 200 Hz physics at 50 Hz control
