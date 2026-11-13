@@ -129,23 +129,31 @@ The pendulum itself: [`exp1_pendulum/results/pendulum.mp4`](exp1_pendulum/result
 
 The same driven link now carries a second, unactuated link. That link is hinged 40% along its own length, so its mass centre sits 3.05 cm from its hinge and gravity barely restores it — the arrangement of a chaotic-pendulum desk toy. It tumbles 14.5 times in 3 s, and a $10^{-9}$ rad perturbation of the initial state grows to $6\times10^{-5}$ rad over the same window (Lyapunov exponent 3.1 /s).
 
-Here the paper's prediction is the multi-body one from its appendix, $\mathbf M^{\mathrm{sim}} = \mathbf M^{\mathrm{real}} + \delta t \cdot \mathbf K_D$: a constant added to the joint-space inertia, which in MuJoCo is exactly a rotor inertia (`armature`) on the driven joint. The physical joint has none; at 200 Hz the simulator needs 5.0e−3 kg m², which is 7.3% of the joint's own inertia.
+Here the paper's prediction is the multi-body one from its appendix, $\mathbf M^{\mathrm{sim}} = \mathbf M^{\mathrm{real}} + \delta t \cdot \mathbf K_D$: a constant added to the joint-space inertia, which in MuJoCo is exactly a rotor inertia (`armature`) on the driven joint. The physical joint has none; at 200 Hz the simulator needs 5.1e−3 kg m², which is 10% of the smallest joint-space inertia the configuration reaches.
 
 ### Flow of the effective parameters
 
 ![Flow](exp2_double_pendulum/results/fig_flow_mujoco.png)
 
-Fitting (armature, $K_P$, $K_D$), plus a command delay for the two first-order schemes, on a nearly uniform grid $h$ = 1 to 20 ms, each step reached with an integer control frequency and decimation. The three columns are the same MuJoCo schemes as in experiment 1.
+The grid is experiment 1's: $h$ = 0.25, 0.5, ..., 5 ms, each step reached with an integer control frequency (50, 100, 200 Hz) and integer decimation. One parameter set is fitted to five drive frequencies at once, over 0.1 s, short enough that the trajectory error is still linear in the parameter error, with **both** joints in the residual, so the free link has to be reproduced too. The three columns are the same MuJoCo schemes as in experiment 1.
 
-| | rotor-inertia slope | predicted | post-fit RMSE vs $h^2$ |
+Only the counterterms the derivation predicts are fitted: a rotor inertia on the driven joint, $K_D$, and a command delay for the two schemes that hold the command. The passive joint gets none, because $\mathbf D = -\partial\mathbf F/\partial\dot{\mathbf q}$ has an identically zero second row — it carries no PD gains — so $\delta\mathbf M$ has nothing to put there.
+
+| | measured $c_1$ | predicted | $R^2$ |
 |---|---|---|---|
-| B: RK4 + explicit PD | 1.02 per ms ($R^2$ = 0.998) | 1.00 ($K_D/2$) | $R^2$ = 0.993 |
-| A: Euler + explicit PD | 2.69 per ms ($R^2$ = 0.984) | 1.00 | $R^2$ = 0.895 |
-| C: implicitfast + native PD | 0.30 per ms ($R^2$ = 0.874) | −1.00 | $R^2$ = 0.889 |
+| A: Euler + explicit PD, rotor inertia$/M_{11}^{\min}$ | +0.0182 per ms | +0.0193 ($K_D/2$) | 0.9962 |
+| B: RK4 + explicit PD, rotor inertia$/M_{11}^{\min}$ | +0.0193 per ms | +0.0193 | 1.0000 |
+| C: implicitfast + native PD, rotor inertia$/M_{11}^{\min}$ | −0.0204 per ms | −0.0193 | 0.9954 |
+| B: $\Delta K_D/K_D$ | +0.0200 per ms | +0.0200 | 1.0000 |
+| A and C: command delay | +0.517 | +0.500 ($h/2$) | 0.9995 |
 
-**Only RK4 follows the prediction here**, and it follows it closely: slope 1.02 against 1.00, $\Delta K_D$ 4.32 against 4.00, and a post-fit error proportional to $h^2$. For Euler and implicitfast the identified rotor inertia misses the predicted line, the identified command delay comes out negative instead of $+h/2$, and the post-fit error no longer scales as $h^2$ — at $h$ = 1 ms it is 6.1e−3 rad against RK4's 6.9e−5.
+**All three schemes follow the prediction**, sign included: RK4 to four digits, the two first-order schemes to 6%, and the delay to 3%. The rotor inertia the simulator needs is not small — at 200 Hz it is 5.1e−3 kg m², 10% of the smallest joint-space inertia the configuration reaches.
 
-That contrast is the main thing the second link adds. With one joint, everything the simulator omits acts through that joint, and all three schemes could absorb it. With a second, unactuated link, a first-order integrator commits an $O(h)$ error in the mechanism itself, part of it on a joint that carries no PD parameter. Adding a rotor inertia on the free joint as well only takes Euler from 4.4e−3 to 2.7e−3 rad, still 7× worse than what RK4 reaches with the formula alone and no fitting. This is step 4 of the paper's procedure reached from the other side: when the effective parameters stop preserving the behaviour, it is the simulator, not the parameter set, that has to be expanded.
+**$K_P$ is held at its measured value, and that is what makes the rest work.** The derivation gives $K_P$ no counterterm at either order, but it is strongly collinear with the rotor inertia (correlation −0.93). Left free, least squares uses it to fake-absorb the part of the discretization error that *no* available operator can represent, and drags the rotor inertia off by up to 68% in the process. The giveaway is that it buys nothing: the post-fit error with $K_P$ free is 2.698e−4 rad against 2.699e−4 with it fixed. A redundant operator does not make the model better, it makes the coefficients meaningless — the usual reason an effective theory fixes its operator basis before fitting.
+
+**What is left over is the genuinely unrepresentable part.** The second link contributes an off-diagonal inertia counterterm and the antisymmetric part of the Coriolis velocity Jacobian, neither of which MuJoCo can express: `armature` is diagonal and $\delta\mathbf M$ here is not symmetric. That remainder cannot vanish, and it does not — it shows up as the 6% bias in A's and C's first-order slope, as the $c_2$ terms, and as a post-fit error that stays finite (1.6e−4 rad at $h$ = 1 ms for A and C, 1.7e−5 for RK4). It does **not** show up as a parameter that refuses to flow. Non-renormalizable means the residual has a floor, not that the counterterms stop being right.
+
+**A and C turn out to be the same fit.** Euler's effective inertia is $\mathbf M + a + h\mathbf K_D/2$ and `implicitfast`'s is $\mathbf M + a - h\mathbf K_D/2$, so the two differ only by where the origin of $a$ sits: the identified armatures satisfy $a_A - a_C = h K_D$ to 0.5% across the whole grid, and the two sweeps reach the same delay to nine digits and the same post-fit error to twelve. The opposite signs in the figure are one scheme seen from both sides.
 
 ### Behaviour
 
@@ -313,7 +321,8 @@ uv run python plot_flow.py --engine mjwarp
 ```
 
 `double_isaac.py` and `run_double.py` hold a validated Isaac model of the chaotic double
-pendulum; that experiment has not been run to completion yet.
+pendulum. It is not swept: experiment 1 already shows the counterterms carry across engines,
+and experiment 2's point is the passive joint, which is the same mechanism in either.
 
 ## Roadmap
 
@@ -323,7 +332,6 @@ Each step is one commit, reviewed before the next begins.
 - [x] Experiment 1, MuJoCo: flow, gap, and the pendulum video
 - [x] Experiment 2, MuJoCo: the chaotic double pendulum
 - [x] Isaac, experiment 1: the single pendulum in PhysX
-- [ ] Isaac, experiment 2: the chaotic double pendulum
 - [x] MuJoCo Warp, experiment 1: the same pendulum on the GPU
 - [ ] MuJoCo Warp, experiment 2: the chaotic double pendulum
 

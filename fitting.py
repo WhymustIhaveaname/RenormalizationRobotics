@@ -80,7 +80,7 @@ def start_points(h, predicted, prev, rng, with_delay, param0):
 
 
 def identify(rollout, gt, h, starts, param0, with_delay=False, batch=None,
-             inertia_floor=None):
+             inertia_floor=None, fixed=()):
     """Least-squares fit of (J, K_P, K_D) in log space, plus the command delay in units of h.
 
     `rollout(J, kp, kd, delay)` returns the simulated angles, already concatenated over every
@@ -91,6 +91,10 @@ def identify(rollout, gt, h, starts, param0, with_delay=False, batch=None,
     `inertia_floor` switches the first parameter from log space to a linear coordinate in units
     of h K_D / 2, bounded so the total inertia stays above zero.  A joint that carries no rotor
     inertia of its own has nothing to take a logarithm of, and its counterterm may be negative.
+    `fixed` holds indices into (J, K_P, K_D, delay) that are held at their measured value
+    instead of being fitted.  An operator whose counterterm the theory says is zero is not free
+    to help: it is not orthogonal to the others, so letting it absorb higher-order residual
+    drags the ones that do flow off their predicted slopes.
     `starts` are parameter vectors (J, K_P, K_D) or (J, K_P, K_D, delay); returns the best fit.
     """
     gt = np.asarray(gt)
@@ -103,16 +107,24 @@ def identify(rollout, gt, h, starts, param0, with_delay=False, batch=None,
         hi = [0.9 * inertia_floor / unit, 2.0, 2.0] + ([5.0] if with_delay else [])
         bounds = (np.array(lo), np.array(hi))
 
+    ndim = 4 if with_delay else 3
+    free = [k for k in range(ndim) if k not in fixed]
+    if fixed:                                   # the bounds follow the free coordinates
+        bounds = ((bounds[0][free], bounds[1][free]) if linear else bounds)
+
     def unpack(x):
-        head = ((x[0] * unit,) if linear else (param0[0] * np.exp(x[0]),))
-        return (*head, *(np.asarray(param0[1:3]) * np.exp(x[1:3])), *(x[3:] * h))
+        full = np.zeros(ndim)
+        full[free] = x
+        head = ((full[0] * unit,) if linear else (param0[0] * np.exp(full[0]),))
+        return (*head, *(np.asarray(param0[1:3]) * np.exp(full[1:3])), *(full[3:] * h))
 
     def pack(p):
         p = np.asarray(p, dtype=float)
         first = p[0] / unit if linear else np.log(p[0] / param0[0])
         x = np.append(first, np.log(p[1:3] / np.asarray(param0[1:3])))
         x = np.append(x, (p[3] if len(p) > 3 else 0.0) / h) if with_delay else x
-        return np.clip(x, bounds[0] * 0.99, bounds[1] * 0.99) if linear else x
+        x = np.clip(x, bounds[0] * 0.99, bounds[1] * 0.99) if linear and not fixed else x
+        return x[free]
 
     def clean(theta):
         """A rollout that blew up is reported as a large residual, never as NaN."""

@@ -84,8 +84,10 @@ def flow_figure(columns, row_labels, out_paths, h_max, caption, f_ticks,
         groups  optional (n,) keys into `point_colors` for colouring the points
     `row_labels` is the y label of each parameter row; with `show_rmse` a post-fit error row is
     appended below them.
-    Rows listed in `no_fit` get the theory line only: a fit there would suggest a law where
-    the theory says there is none.  `row_ylim` maps a row index to one y range per column.
+    `no_fit` holds cells that get the theory line only, because a fit there would suggest a law
+    where the theory says there is none: an int means that row in every column, a (row, column)
+    pair means that one cell.  `row_ylim` maps a row index to one y range per column, None for
+    a column that keeps its own; a range is widened if the data would otherwise fall outside it.
     With `quadratic`, rows that do have a predicted slope are fitted as c_1 h + c_2 h^2 instead
     of a straight line, so that c_1 can be read against the first-order theory on its own.
     """
@@ -128,25 +130,26 @@ def flow_figure(columns, row_labels, out_paths, h_max, caption, f_ticks,
                     color=INK, lw=1.4, zorder=1,
                     label=(f"theory: $c_1$ = {num(t1)}, $c_2$ = {num(t2)}" if t2
                            else f"theory: slope {num(t1)}"))
-            if t1 == 0 and t2 == 0:  # nothing predicted: a free quadratic exposes the h^2 term
-                coef, r2 = poly_fit(h, y, 2)
-                f0, f1, f2 = (short(coef, k, h_max) for k in (2, 1, 0))
-                text = (f"fit: $c_0 + c_1 h + c_2 h^2$, $R^2$ = {r2:.4f}\n"
-                        f"$c_0$ = {f0}, $c_1$ = {f1}, $c_2$ = {f2}")
-            elif quadratic:  # separate the predicted slope from the leading correction to it
-                coef, r2 = poly_fit_origin(h, y, 2)
-                text = (f"fit: $c_1 h + c_2 h^2$, $R^2$ = {r2:.4f}\n"
-                        f"$c_1$ = {num(coef[1])}, $c_2$ = {num(coef[0])}")
-            else:
-                coef, r2 = poly_fit(h, y, 1)
-                text = f"fit: slope {num(coef[0])}, $R^2$ = {r2:.4f}"
-            if i not in no_fit:
+            if i not in no_fit and (i, j) not in no_fit:
+                if t1 == 0 and t2 == 0:  # nothing predicted: a free quadratic shows the h^2 term
+                    coef, r2 = poly_fit(h, y, 2)
+                    f0, f1, f2 = (short(coef, k, h_max) for k in (2, 1, 0))
+                    text = (f"fit: $c_0 + c_1 h + c_2 h^2$, $R^2$ = {r2:.4f}\n"
+                            f"$c_0$ = {f0}, $c_1$ = {f1}, $c_2$ = {f2}")
+                elif quadratic:  # separate the predicted slope from its leading correction
+                    coef, r2 = poly_fit_origin(h, y, 2)
+                    text = (f"fit: $c_1 h + c_2 h^2$, $R^2$ = {r2:.4f}\n"
+                            f"$c_1$ = {num(coef[1])}, $c_2$ = {num(coef[0])}")
+                else:
+                    coef, r2 = poly_fit(h, y, 1)
+                    text = f"fit: slope {num(coef[0])}, $R^2$ = {r2:.4f}"
                 ax.plot(h_dense, np.polyval(coef, h_dense), color=FIT_COLOR, lw=2, ls="--",
                         zorder=2, label=text)
             draw_points(ax, h, y, groups)
             loc = "best"
-            if row_ylim and i in row_ylim:
+            if row_ylim and i in row_ylim and row_ylim[i][j] is not None:
                 lo, hi = row_ylim[i][j]
+                lo, hi = min(lo, y.min()), max(hi, y.max())   # never hide a point
                 ax.set_ylim(lo, hi)
                 # keep the legend out of the half the curve runs through, as "best" does elsewhere
                 loc = "upper left" if hi > -lo else "lower left"

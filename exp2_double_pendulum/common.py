@@ -18,7 +18,7 @@ from scipy.integrate import solve_ivp
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from fitting import identify as _identify  # noqa: E402
+from fitting import identify as _identify, start_points as _start_points  # noqa: E402
 
 # Two uniform rods, same mass and length as the single pendulum (SI units).
 M1 = M2 = 0.45359237  # 1 lb
@@ -36,7 +36,18 @@ KD0 = 2.0
 F_CTRL = 50
 A_REF = np.pi / 4
 F_DRIVE = 4.0
-T_FIT = 1.0  # s of trajectory used for the error metric and for identification
+# Joint 2 is passive and the system is chaotic, so its angle decorrelates fast: at h = 5 ms it
+# is already 1 rad off after 115 ms and 91 rad off after a second.  Identification therefore
+# uses a short window and only the driven joint, whose error stays bounded; one parameter set
+# is fitted to several drive frequencies at once, as in experiment 1, to excite every direction.
+# The window is squeezed from both sides.  Below about 80 ms the command has barely moved and
+# the parameters are not excited; above about 150 ms the trajectory error has left the linear
+# regime, which happens well before the Lyapunov time (35 ms against 117 ms at h = 5 ms),
+# because the integrator injects fresh error every step rather than amplifying one perturbation.
+T_FIT = 0.1   # s of trajectory used for identification
+F_FLOW = 200  # Hz; the finest command rate the h grid allows, and the least biased one
+T_GAP = 1.0   # s used for the behaviour figure and the videos
+DRIVES = (1.0, 2.0, 4.0, 8.0, 16.0)  # Hz, all fitted with a single parameter set
 T_SHOW = 2.0  # s shown in the trajectory panel
 
 PARAM0 = np.array([0.0, KP0, KD0])  # measured: no rotor inertia on the joint
@@ -90,9 +101,9 @@ def model_xml(arm="B"):
 </mujoco>"""
 
 
-def ref_sequence(t_end, f_ctrl=F_CTRL):
+def ref_sequence(t_end, f_ctrl=F_CTRL, f_drive=F_DRIVE):
     n = int(round(t_end * f_ctrl))
-    return A_REF * np.sin(2 * np.pi * F_DRIVE * np.arange(n) / f_ctrl)
+    return A_REF * np.sin(2 * np.pi * f_drive * np.arange(n) / f_ctrl)
 
 
 class Sim:
@@ -224,11 +235,18 @@ def rmse(sim, refs, dec, params, gt, f_ctrl=F_CTRL):
     return None if theta is None else float(np.sqrt(np.mean((theta - gt) ** 2)))
 
 
-def identify(rollout, gt, h, starts, with_delay=False, batch=None):
+def start_points(h, predicted, prev, rng, with_delay):
+    """This double pendulum's starting points; the fitter itself lives in ../fitting.py."""
+    return _start_points(h, predicted, prev, rng, with_delay, PARAM0)
+
+
+def identify(rollout, gt, h, starts, with_delay=False, batch=None, fixed=(1,)):
     """This double pendulum's wrapper around the shared fitter in ../fitting.py.
 
     The joint carries no rotor inertia to begin with and its counterterm may be negative, so the
     first parameter is fitted linearly and bounded by the smallest M11 the configuration reaches.
+    K_P is held fixed by default: the derivation gives it no counterterm at either order, and
+    letting it float lets it absorb h^2 residual and drags the rotor inertia off by up to 68%.
     """
     return _identify(rollout, gt, h, starts, PARAM0, with_delay=with_delay, batch=batch,
-                     inertia_floor=M11_MIN)
+                     inertia_floor=M11_MIN, fixed=fixed)
