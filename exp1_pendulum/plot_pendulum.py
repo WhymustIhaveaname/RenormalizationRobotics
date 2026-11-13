@@ -36,12 +36,12 @@ def main():
              "ylabel": r"simulated $-$ real (rad)",
              "title": "Simulation error at $f$ = 200 Hz",
              "series": [(sim.rollout(refs, F_CTRL, DEMO_DEC, *p) - gt, c, n)
-                        for p, c, n in ((PARAM0, MEASURED, "measured parameters"),
+                        for p, c, n in ((PARAM0, MEASURED, "without renormalization"),
                                         (renormalized(ARM, row["h"]), RENORM,
                                          "renormalized parameters"))]}
 
     series = []
-    for key, color, label in (("rmse_measured", MEASURED, "measured"),
+    for key, color, label in (("rmse_measured", MEASURED, "without renormalization"),
                               ("rmse_renormalized", RENORM, "renormalized (no fitting)"),
                               ("rmse_identified", IDENT, "identified (fitted)")):
         ok = [r for r in ROWS if r[key] is not None and r["f"] <= F_MAX]

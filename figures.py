@@ -207,6 +207,10 @@ def behaviour_figure(error_panel, gap_panel, out_paths, f_max):
         ax.plot(error_panel["t"], values, color=color, lw=1.4, label=label)
     ax.axhline(0, color=INK, lw=1.2)
     ax.set_xlim(0, error_panel.get("xlim", error_panel["t"][-1]))
+    # The error oscillates over its whole range, so no corner is free: give the legend a band
+    # of its own below the curves instead of letting it cover them.
+    lo, hi = ax.get_ylim()
+    ax.set_ylim(lo - 0.3 * (hi - lo), hi)
     ax.set_xlabel("time (s)")
     ax.set_ylabel(error_panel["ylabel"])
     ax.set_title(error_panel["title"], fontsize=11.5)

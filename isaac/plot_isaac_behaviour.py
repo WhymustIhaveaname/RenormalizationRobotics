@@ -31,11 +31,11 @@ def main(stem="isaac_gap"):
     t = np.arange(1, len(gt) + 1) / F_CTRL
     error = {"t": t, "xlim": DEMO_T, "ylabel": r"simulated $-$ real (rad)",
              "title": f"Isaac at $f$ = 200 Hz, {SCHEME_NAME}",
-             "series": [(z[f"{SCHEME}_measured"] - gt, MEASURED, "measured parameters"),
+             "series": [(z[f"{SCHEME}_measured"] - gt, MEASURED, "without renormalization"),
                         (z[f"{SCHEME}_renormalized"] - gt, RENORM, "renormalized parameters")]}
 
     series = []
-    for key, color, label in (("rmse_measured", MEASURED, "measured"),
+    for key, color, label in (("rmse_measured", MEASURED, "without renormalization"),
                               ("rmse_renormalized", RENORM, "renormalized (no fitting)"),
                               ("rmse_identified", IDENT, "identified (fitted)")):
         ok = [r for r in rows if r.get(key) is not None and r["f"] <= F_MAX]

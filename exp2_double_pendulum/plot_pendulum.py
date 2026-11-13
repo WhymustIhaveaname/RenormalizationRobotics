@@ -31,7 +31,7 @@ def panel_error(ax):
     refs = ref_sequence(DEMO_T)
     gt = sim.ground_truth(refs)
     t = np.arange(1, len(refs) + 1) / F_CTRL
-    for params, color, name in ((PARAM0, MEASURED, "measured parameters"),
+    for params, color, name in ((PARAM0, MEASURED, "without renormalization"),
                                 (renormalized(row["h"]), RENORM, "renormalized parameters")):
         theta = sim.rollout(refs, DEMO_DEC, *params, strict=False)
         ax.plot(t, theta[:, 1] - gt[:, 1], color=color, lw=1.4, label=name)
@@ -56,7 +56,7 @@ def crossing(rows, key, target):
 
 def panel_gap(ax):
     rows = [r for r in ROWS if r["f"] <= F_MAX]
-    for key, color, label in (("rmse_measured", MEASURED, "measured"),
+    for key, color, label in (("rmse_measured", MEASURED, "without renormalization"),
                               ("rmse_renormalized", RENORM, "renormalized (no fitting)"),
                               ("rmse_identified", IDENT, "identified (fitted)")):
         ok = [r for r in rows if r[key] is not None]   # a diverged run has no error to plot
