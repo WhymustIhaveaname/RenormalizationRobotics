@@ -36,14 +36,14 @@ KD0 = 2.0
 F_CTRL = 50
 A_REF = np.pi / 4
 F_DRIVE = 4.0
-# Joint 2 is passive and the system is chaotic, so its angle decorrelates fast: at h = 5 ms it
-# is already 1 rad off after 115 ms and 91 rad off after a second.  Identification therefore
-# uses a short window and only the driven joint, whose error stays bounded; one parameter set
-# is fitted to several drive frequencies at once, as in experiment 1, to excite every direction.
-# The window is squeezed from both sides.  Below about 80 ms the command has barely moved and
-# the parameters are not excited; above about 150 ms the trajectory error has left the linear
-# regime, which happens well before the Lyapunov time (35 ms against 117 ms at h = 5 ms),
-# because the integrator injects fresh error every step rather than amplifying one perturbation.
+# The identification window is squeezed from both sides.  Below about 80 ms the command has
+# barely moved and the parameters are not excited.  Above the Lyapunov time 1/lambda = 320 ms
+# chaos decorrelates the passive joint: with the measured parameters at h = 5 ms its error
+# passes 1 rad at 0.54 s and half a turn at 1.9 s, after which matching it says nothing about
+# the parameters.  0.1 s sits between the two, and both joints then stay in the regime where
+# the trajectory error is still linear in the parameter error (to 1% out to 380 ms at h = 5 ms,
+# measured by scaling a perturbation of the armature).  One parameter set is fitted to several
+# drive frequencies at once, as in experiment 1, to excite every direction.
 T_FIT = 0.1   # s of trajectory used for identification
 F_FLOW = 200  # Hz; the finest command rate the h grid allows, and the least biased one
 T_GAP = 1.0   # s used for the behaviour figure and the videos

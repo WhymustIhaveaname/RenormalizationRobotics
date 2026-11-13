@@ -20,7 +20,7 @@ $$
 **(b) The same holds across simulation frequencies, and the measured parameters eventually fail outright.**
 
 - The renormalized parameters give a **36× smaller** error at 200 Hz, with no fitting. Measured parameters only match it at $f$ = 7.2 kHz, so the same accuracy costs 36× fewer physics steps.
-- Fitting on top of the formula gains only another 1.50×, and the fitted parameters differ from the predicted ones by about 1% ($J^\star/J$ = 1.369 against 1.356 at 200 Hz). That residual is the second-order term in $h$, not an artifact of fitting: identifying on one command or on all five gives the same parameters to four digits.
+- Fitting on top of the formula gains only another 1.50× — and that is its in-sample error, three parameters against five 4-second trajectories — and the fitted parameters differ from the predicted ones by about 1% ($J^\star/J$ = 1.369 against 1.356 at 200 Hz). That residual is the second-order term in $h$, not an artifact of fitting: identifying on one command or on all five gives the same parameters to four digits.
 - At 50 Hz the measured parameters diverge, while $J^\star = 2.42J$ keeps the same simulation stable and accurate to 1.10e−2 rad. Inflating the inertia both absorbs the omitted sub-step dynamics and raises the stability limit.
 
 The panel shows 50–1000 Hz, the range a robot simulator actually runs at; the sweep itself goes to 5 kHz.
@@ -62,6 +62,8 @@ What is left over at $O(h^2)$ after projecting onto the three tunable operators 
 | fitting window 1 s → 4 s | 0.0166 throughout | 4.66e−4 → 4.81e−4 | −9.6e−6 → **+1.04e−5** |
 
 $J$ and $K_D$ are counterterms: they are inside the span, so they do not care what the command is. $\Delta K_P$ changes sign four different ways, grows with amplitude as the gravitational obstruction should, and is three orders of magnitude smaller than $\Delta J/J$ anyway.
+
+$K_P$ is nevertheless left free here, unlike in experiment 2, and that is a result rather than an oversight: **released, it comes back to zero on its own**, which is stronger evidence than pinning it there. Refitting the whole 200 Hz chain with $K_P$ held changes the first-order slopes in the fifth digit (A: 0.07084 against 0.07085, delay identical, post-fit error 0.1% worse) and only improves B's $\Delta K_D$ from 0.01996 to 0.02000. Experiment 2 has to hold it because there the unrepresentable remainder is 550× larger — 1.6e−4 rad against 2.9e−7 — and a redundant operator collinear with the rotor inertia has something to absorb.
 
 ### System
 
@@ -171,11 +173,11 @@ The three pendulums side by side: [`exp2_double_pendulum/results/double_pendulum
 
 ### System and method
 
-Both rods are 1 lb and 1 ft, as in experiment 1. Joint 1 carries the same PD controller ($K_P$ = 80, $K_D$ = 2) at 50 Hz control; joint 2 is free. The command is $(\pi/4)\sin(2\pi \cdot 4\ \text{Hz} \cdot t)$, whose 19.7 rad/s peak velocity matches experiment 1.
+Both rods are 1 lb and 1 ft, as in experiment 1. Joint 1 carries the same PD controller ($K_P$ = 80, $K_D$ = 2); joint 2 is free. The command is $(\pi/4)\sin(2\pi f_{\mathrm{drive}} t)$, sampled and held at the control rate. At $f_{\mathrm{drive}}$ = 4 Hz its 19.7 rad/s peak velocity matches experiment 1; the flow sweep fits one parameter set to 1, 2, 4, 8 and 16 Hz at once, to excite every direction.
 
 The reference is the exact continuous-time motion under the held command, integrated with DOP853 at `rtol = atol = 1e-12`. Its right-hand side is MuJoCo's own rigid-body dynamics, so the reference and the simulator describe the same mechanism and differ only in time discretization; `sanity_check.py` confirms the joint-space inertia against the analytic value for two rods and checks that the reference is converged.
 
-The error metric is the joint-angle RMSE over the first second. Beyond that, chaos makes trajectory matching meaningless for every parameter set.
+**The two windows are different on purpose.** Identification runs over 0.1 s: longer than the 80 ms the command needs to excite the parameters, shorter than the Lyapunov time $1/\lambda$ = 320 ms, beyond which chaos decorrelates the passive joint — with the measured parameters at $h$ = 5 ms its error passes 1 rad at 0.54 s and half a turn at 1.9 s, and matching it there says nothing about the parameters. Inside 0.1 s both joints are still in the regime where the trajectory error is linear in the parameter error, which holds to 1% out to 380 ms. The behaviour figure then scores every parameter set on the joint-angle RMSE over 1 s, ten times the fit window.
 
 ## Isaac Sim: the single pendulum in PhysX
 
@@ -291,6 +293,7 @@ uv run python probe_step_map.py        # which step map each arm realizes, measu
 cd ../exp2_double_pendulum
 uv run python sanity_check.py     # inertia, reference convergence, chaos
 uv run python run_flow.py         # effective parameters on a uniform grid of time steps
+uv run python run_flow.py --delay # same, also identifying the command delay (arms A and C)
 uv run python plot_flow.py        # flow figure
 uv run python run_gap.py          # error of each parameter set across resolutions
 uv run python plot_pendulum.py    # behaviour figure
