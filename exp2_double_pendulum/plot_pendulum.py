@@ -44,6 +44,16 @@ def panel_error(ax):
     style(ax)
 
 
+def crossing(rows, key, target):
+    """The frequency at which `key` first reaches `target`, interpolated in log-log."""
+    pts = sorted(((r["f"], r[key]) for r in rows if r[key] is not None), key=lambda p: p[0])
+    for (f0, e0), (f1, e1) in zip(pts, pts[1:]):
+        if e0 >= target >= e1:
+            t = np.log(e0 / target) / np.log(e0 / e1)
+            return f0 * (f1 / f0) ** t
+    raise ValueError(f"{key} never reaches {target}")
+
+
 def panel_gap(ax):
     rows = [r for r in ROWS if r["f"] <= F_MAX]
     for key, color, label in (("rmse_measured", MEASURED, "measured"),
@@ -52,12 +62,15 @@ def panel_gap(ax):
         ok = [r for r in rows if r[key] is not None]   # a diverged run has no error to plot
         ax.plot([r["f"] for r in ok], [r[key] for r in ok], "o-", ms=4, lw=1.5,
                 color=color, label=label)
-    row = next(r for r in rows if r["dec"] == DEMO_DEC)
-    lo, hi = row["rmse_renormalized"], row["rmse_measured"]
-    ax.annotate("", (row["f"], lo), (row["f"], hi),
+    # Read the same curves the other way round: at the error the measured parameters need the
+    # finest step for, how coarse a step do the renormalized ones get away with?  That ratio is
+    # the saving in compute, which is what a user actually pays.
+    target = rows[-1]["rmse_measured"]
+    f_cheap = crossing(rows, "rmse_renormalized", target)
+    ax.annotate("", (f_cheap, target), (rows[-1]["f"], target),
                 arrowprops=dict(arrowstyle="<->", color=INK, lw=1.3))
-    ax.annotate(f"{hi / lo:.0f}$\\times$ smaller,\nwithout fitting", (row["f"], np.sqrt(lo * hi)),
-                xytext=(10, 0), textcoords="offset points", va="center", fontsize=10, color=INK)
+    ax.annotate(f"same error, {rows[-1]['f'] / f_cheap:.0f}$\\times$ faster", (650, target),
+                xytext=(0, 8), textcoords="offset points", ha="center", fontsize=10.5, color=INK)
     ax.set_yscale("log")
     ax.set_xlim(0, F_MAX * 1.02)
     ax.set_xlabel("simulation frequency $f$ (Hz)")
