@@ -6,7 +6,7 @@ Experiments for *Effective Parameters, Real Behavior: Renormalization for Roboti
 [![PDF](https://img.shields.io/badge/PDF-b31b1b.svg)](https://arxiv.org/pdf/2607.24079)
 [![BibTeX](https://img.shields.io/badge/BibTeX-555555.svg)](#citation)
 
-A simulator should not copy the measured parameters of a robot. It needs effective parameters, which change with the simulation frequency $f$. For PD control, an effective delay $\delta t \propto 1/f$ shifts them as follows:
+A simulator needs effective parameters, which change with the simulation frequency $f$. For PD control, an effective delay $\delta t \propto 1/f$ shifts them as follows:
 
 $$
 K_D^{\mathrm{sim}} = K_D^{\mathrm{real}} + \delta t \cdot K_P^{\mathrm{real}},
@@ -51,7 +51,7 @@ A free second link hangs from the end of the driven link. Its mass center is nea
 
 ![Flow](exp2_double_pendulum/results/fig_flow_mujoco.png)
 
-The theory gives $K_P$ no counterterm. A free $K_P$ does not decrease the error. It only absorbs error that no parameter can represent, and it moves the rotor inertia by up to 68%.
+The theory gives $K_P$ no counterterm. A free $K_P$ moves the rotor inertia by up to 68%, and the error stays the same.
 
 The opposite signs of A and C are one counterterm in two coordinate systems. Their rotor inertias differ by $hK_D$ to 0.5%, and their errors agree to 12 digits.
 
@@ -59,11 +59,11 @@ The opposite signs of A and C are one counterterm in two coordinate systems. The
 
 ![Result](exp2_double_pendulum/results/fig_double_pendulum_mujoco.png)
 
-Chaos turns a small parameter error into a lost trajectory. At 200 Hz, the formula gives a 10× smaller error, with no fitting. For the same accuracy, it needs 11× less computation.
+Chaos turns a small parameter error into a lost trajectory. At 200 Hz, the formula gives a 10× smaller error. For the same accuracy, it needs 11× less computation.
 
 ### Setup
 
-Both links are the rod of experiment 1. The second link is hinged 40% along its length. The PD controller drives the first joint only. The fit window is shorter than the Lyapunov time of 0.32 s.
+Both links are the rod of experiment 1. The second link is hinged 40% along its length. The PD controller drives the first joint only.
 
 ## Isaac Sim: the single pendulum in PhysX
 
@@ -71,19 +71,19 @@ This section repeats experiment 1 in Isaac Sim 5.1. PhysX has no RK4, so the thr
 
 ![Isaac flow](exp1_pendulum/results/fig_flow_isaac_single.png)
 
-The PhysX source is open ([NVIDIA-Omniverse/PhysX](https://github.com/NVIDIA-Omniverse/PhysX)), so the theory comes from the solver code. TGS applies gravity once per step, not once per substep. With this fact, the TGS drive matches the theory within 3% at $h$ = 5 ms. The sign of the counterterm depends on the scheme, not on the engine.
+The PhysX source is open ([NVIDIA-Omniverse/PhysX](https://github.com/NVIDIA-Omniverse/PhysX)), so the theory comes from the solver code. TGS substeps the drive but applies gravity once per step. With this fact, the TGS drive matches the theory within 3%. The sign of the counterterm depends on the scheme.
 
 ![Isaac behaviour](exp1_pendulum/results/fig_behaviour_isaac_single.png)
 
-At 156 Hz, the formula gives a 22× smaller error, with no fitting. For the error of the measured parameters at 1 kHz, it needs 11× less computation.
+At 156 Hz, the formula gives a 22× smaller error. For the same accuracy, it needs 11× less computation.
 
 ## MuJoCo Warp: the same pendulum on the GPU
 
-MuJoCo Warp is MuJoCo for the GPU, and the solver of [Newton](https://github.com/newton-physics/newton). This experiment is a high-level, independent consistency check of MuJoCo Warp against MuJoCo. It does not compare the code line by line. It runs the same physical measurement on both engines. An error in the integrator, the actuator or the command would change a counterterm.
+This experiment is a high-level sanity check of MuJoCo Warp. It checks whether MuJoCo Warp gives the same results as MuJoCo. It does, so you can safely move from MuJoCo to MuJoCo Warp, and vice versa.
 
 ![MuJoCo Warp flow](exp1_pendulum/results/fig1_flow_mjwarp.png)
 
-**The check passes: MuJoCo Warp is consistent with MuJoCo.** Every flow agrees to four digits. The trajectories agree to 1.2e−7 rad, which is float32 round-off.
+Every flow agrees to four digits, and the trajectories agree to float32 round-off.
 
 ## Reproduce
 
