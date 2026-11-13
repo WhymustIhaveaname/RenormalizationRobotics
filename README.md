@@ -20,8 +20,6 @@ $$
   <img src="exp2_double_pendulum/results/double_pendulum.gif" width="49%" alt="The real double pendulum and two 200 Hz simulators of it">
 </p>
 
-Left, the pendulum on its 2 Hz command; right, the double pendulum on its 4 Hz command, with only the upper link driven; both at quarter speed. Grey is the real motion, drawn behind two 200 Hz simulators: without renormalization (orange), that is with the measured parameters as they are, and with the renormalized parameters (blue). Without renormalization the rod swings up to 0.05 rad off the real one and the free link is a radian off by 0.54 s; renormalized, the rod stays on it and the free link holds until 1.93 s.
-
 ## Experiment 1: PD-controlled pendulum at finite simulation frequency
 
 ![Result](exp1_pendulum/results/fig_pendulum_mujoco.png)

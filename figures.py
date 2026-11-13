@@ -7,12 +7,13 @@ flow_figure:       one column per scheme, one row per parameter, last row the po
                    against h^2.
 behaviour_figure:  two panels, the trajectory error against time and the RMSE of each
                    parameter set against simulation frequency.
-save_gif:          the README animations.
+save_gif, error_strip: the README animations.
 """
 
 import matplotlib.pyplot as plt
+from matplotlib import font_manager
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFont
 
 FIT_COLOR = "#eb6834"
 MEASURED, RENORM, IDENT = "#eb6834", "#2a78d6", "#1baf7a"
@@ -264,3 +265,32 @@ def save_gif(frames, path, fps):
     images = [im.quantize(palette=palette, dither=Image.Dither.NONE) for im in images]
     images[0].save(path, save_all=True, append_images=images[1:], duration=round(1000 / fps),
                    loop=0)
+
+
+def error_strip(draw, box, errors, n, ylim, ticks, label, font):
+    """An ECG-like strip for an animation frame: each simulator's error up to sample n.
+
+    `box` is the plotting area (left, top, right, bottom), spanning every sample of the clip;
+    `ylim` is (bottom, top) in the errors' units and must hold every value, so nothing is clipped;
+    `errors` is [(values, rgb)], drawn in order; `ticks` is [(value, text)].
+    """
+    left, top, right, bottom = box
+    lo, hi = ylim
+
+    def y(v):
+        return bottom - (v - lo) / (hi - lo) * (bottom - top)
+
+    draw.text((left, top - 8), label, fill=(82, 81, 78), font=font, anchor="ld")
+    for v, text in ticks:
+        draw.text((left - 8, y(v)), text, fill=(82, 81, 78), font=font, anchor="rm")
+    draw.line([(left, y(0)), (right, y(0))], fill=(204, 202, 197), width=2)
+    for values, rgb in errors:
+        assert lo <= values.min() and values.max() <= hi, "the strip would clip the error"
+        x = left + np.arange(n + 1) / (len(values) - 1) * (right - left)
+        if n > 0:
+            draw.line(list(zip(x, y(values[:n + 1]))), fill=rgb, width=2, joint="curve")
+
+
+def gif_font(size):
+    """The figures' own typeface, DejaVu Sans, which unlike Pillow's default has θ, π and −."""
+    return ImageFont.truetype(font_manager.findfont("DejaVu Sans"), size)

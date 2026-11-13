@@ -4,6 +4,7 @@ The command is the 2 Hz drive of the behaviour figure's panel (a).  One simulato
 measured parameters and the other the renormalized ones, and both are drawn in front of the real
 pendulum, so a simulator that matches it lies on top of it rather than hiding inside it.  The
 camera is orthographic, so drawing the rods at different depths does not change their size.
+Underneath, a strip traces each simulator's error as the clip runs.
 """
 
 import os
@@ -14,19 +15,22 @@ os.environ.setdefault("MUJOCO_GL", "egl")
 
 import mujoco
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from common import F_REF, G, L, M, PARAM0, Sim, ground_truth, ref_sequence
-from figures import save_gif
+from figures import error_strip, gif_font, save_gif
 from run_gap import F_CTRL, renormalized
 
 ARM = "B"
 DEC = 4  # 200 Hz physics, the legged_gym default
 T_SHOW = 2.0  # s, the window of the behaviour figure's panel (a)
 FPS, SPEED = 25, 0.25
-WIDTH, HEIGHT = 560, 440
+WIDTH, HEIGHT = 560, 440  # the scene; the error strip goes underneath
+STRIP_H = 150
+STRIP_BOX = (70, HEIGHT + 36, WIDTH - 20, HEIGHT + STRIP_H - 14)
+ERR_LIM, ERR_TICKS = (-0.06, 0.06), ((0.05, "0.05"), (0, "0"), (-0.05, "−0.05"))  # rad
 VIEW_H, VIEW_Z = 0.62, -0.04  # m: height of the view and its centre
 # name, colour, rod radius, depth (the camera looks along +y, so smaller y is in front)
 TRACES = (("real", "0.80 0.79 0.77 1", 0.013, 0.04),
@@ -82,7 +86,8 @@ def main(out):
     model = mujoco.MjModel.from_xml_string(XML)
     data = mujoco.MjData(model)
     stride = round(F_CTRL * DEC * SPEED / FPS)  # physics steps per animation frame
-    font = ImageFont.load_default(size=19)
+    font, small = gif_font(17), gif_font(14)
+    errors = [(traj[:, k] - traj[:, 0], rgb) for k, (_, rgb) in zip((1, 2), LABELS[1:])]
 
     frames = []
     with mujoco.Renderer(model, HEIGHT, WIDTH) as renderer:
@@ -90,8 +95,12 @@ def main(out):
             data.qpos[:] = traj[i]
             mujoco.mj_forward(model, data)
             renderer.update_scene(data, camera="side")
-            img = Image.fromarray(renderer.render())
+            scene = renderer.render()
+            img = Image.new("RGB", (WIDTH, HEIGHT + STRIP_H), tuple(scene[-1, 0]))
+            img.paste(Image.fromarray(scene))
             draw = ImageDraw.Draw(img)
+            error_strip(draw, STRIP_BOX, errors, i, ERR_LIM, ERR_TICKS,
+                        "simulated − real (rad)", small)
             draw.text((16, 14), f"{F_CTRL * DEC} Hz physics, {F_REF:g} Hz command",
                       fill=(11, 11, 11), font=font)
             draw.text((16, 40), f"t = {i / (F_CTRL * DEC):4.2f} s   ({SPEED:g}x speed)",
