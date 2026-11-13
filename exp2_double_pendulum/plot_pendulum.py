@@ -69,8 +69,10 @@ def panel_gap(ax):
     f_cheap = crossing(rows, "rmse_renormalized", target)
     ax.annotate("", (f_cheap, target), (rows[-1]["f"], target),
                 arrowprops=dict(arrowstyle="<->", color=INK, lw=1.3))
+    # below the line: above it the label would run into the measured curve
     ax.annotate(f"same error, {rows[-1]['f'] / f_cheap:.0f}$\\times$ faster", (650, target),
-                xytext=(0, 8), textcoords="offset points", ha="center", fontsize=10.5, color=INK)
+                xytext=(0, -9), textcoords="offset points", ha="center", va="top",
+                fontsize=10.5, color=INK)
     ax.set_yscale("log")
     ax.set_xlim(0, F_MAX * 1.02)
     ax.set_xlabel("simulation frequency $f$ (Hz)")
