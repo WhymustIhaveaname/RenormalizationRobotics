@@ -6,7 +6,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from common import F_CTRL, PARAM0, Sim, ref_sequence, renormalized
+from common import F_CTRL, PARAM0, T_GAP, Sim, ref_sequence, renormalized
 
 RESULTS = Path(__file__).parent / "results"
 DEMO_DEC = 4  # 200 Hz physics, the legged_gym default
@@ -49,7 +49,8 @@ def panel_gap(ax):
     for key, color, label in (("rmse_measured", MEASURED, "measured"),
                               ("rmse_renormalized", RENORM, "renormalized (no fitting)"),
                               ("rmse_identified", IDENT, "identified (fitted)")):
-        ax.plot([r["f"] for r in rows], [r[key] for r in rows], "o-", ms=4, lw=1.5,
+        ok = [r for r in rows if r[key] is not None]   # a diverged run has no error to plot
+        ax.plot([r["f"] for r in ok], [r[key] for r in ok], "o-", ms=4, lw=1.5,
                 color=color, label=label)
     row = next(r for r in rows if r["dec"] == DEMO_DEC)
     lo, hi = row["rmse_renormalized"], row["rmse_measured"]
@@ -60,7 +61,7 @@ def panel_gap(ax):
     ax.set_yscale("log")
     ax.set_xlim(0, F_MAX * 1.02)
     ax.set_xlabel("simulation frequency $f$ (Hz)")
-    ax.set_ylabel("joint-angle RMSE over 1 s (rad)")
+    ax.set_ylabel(f"joint-angle RMSE over {T_GAP:g} s (rad)")
     ax.legend(loc="lower left", frameon=False, fontsize=9.5)
     style(ax)
 

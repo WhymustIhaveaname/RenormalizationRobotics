@@ -109,6 +109,7 @@ def identify(rollout, gt, h, starts, param0, with_delay=False, batch=None,
 
     ndim = 4 if with_delay else 3
     free = [k for k in range(ndim) if k not in fixed]
+    full_bounds = bounds                        # in all ndim coordinates, for clipping starts
     if fixed:                                   # the bounds follow the free coordinates
         bounds = ((bounds[0][free], bounds[1][free]) if linear else bounds)
 
@@ -123,7 +124,8 @@ def identify(rollout, gt, h, starts, param0, with_delay=False, batch=None,
         first = p[0] / unit if linear else np.log(p[0] / param0[0])
         x = np.append(first, np.log(p[1:3] / np.asarray(param0[1:3])))
         x = np.append(x, (p[3] if len(p) > 3 else 0.0) / h) if with_delay else x
-        x = np.clip(x, bounds[0] * 0.99, bounds[1] * 0.99) if linear and not fixed else x
+        # clip in all ndim coordinates, before dropping the held ones
+        x = np.clip(x, full_bounds[0] * 0.99, full_bounds[1] * 0.99) if linear else x
         return x[free]
 
     def clean(theta):

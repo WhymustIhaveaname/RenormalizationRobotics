@@ -9,17 +9,18 @@
    2.8
   ],
   "params_identified": [
-   0.02050331128623393,
-   79.29411289462922,
-   2.867055427566049
+   0.020517166750572975,
+   80.0,
+   2.9382973241257675
   ],
-  "rmse_identified": 0.02767129243683487,
-  "seconds": 0.04859601799398661,
+  "rmse_fit": 0.008304323522508357,
+  "seconds": 0.09806689596734941,
   "rmse_measured": 0.7449581792430998,
   "peel_measured": 1.64,
   "rmse_renormalized": 0.30249998647219445,
   "peel_renormalized": 1.92,
-  "peel_identified": 1.96
+  "rmse_identified": 1.5590028770576148,
+  "peel_identified": 0.92
  },
  {
   "dec": 2,
@@ -31,17 +32,18 @@
    2.4
   ],
   "params_identified": [
-   0.009996424213668921,
-   79.80497645218695,
-   2.4162356871435136
+   0.010003883788901786,
+   80.0,
+   2.4323713470889388
   ],
-  "rmse_identified": 0.007109137250180879,
-  "seconds": 0.10104033001698554,
+  "rmse_fit": 0.001743235173387287,
+  "seconds": 0.10958661907352507,
   "rmse_measured": 0.5011615655781844,
   "peel_measured": 1.92,
   "rmse_renormalized": 0.11556960736826634,
   "peel_renormalized": 1.92,
-  "peel_identified": 2.6
+  "rmse_identified": 0.09516863537102735,
+  "peel_identified": 2.14
  },
  {
   "dec": 3,
@@ -53,17 +55,18 @@
    2.2666666666666666
   ],
   "params_identified": [
-   0.00666044591724887,
-   79.92427020359803,
-   2.2743308679335867
+   0.006650231325973777,
+   80.0,
+   2.2808539949330258
   ],
-  "rmse_identified": 0.003151244197382836,
-  "seconds": 0.09891954995691776,
+  "rmse_fit": 0.0007578627437182828,
+  "seconds": 0.17394706280902028,
   "rmse_measured": 0.3995644538118554,
   "peel_measured": 2.6,
   "rmse_renormalized": 0.058456250514972524,
   "peel_renormalized": 2.38,
-  "peel_identified": 2.62
+  "rmse_identified": 0.03667543858461796,
+  "peel_identified": 2.38
  },
  {
   "dec": 4,
@@ -75,17 +78,18 @@
    2.2
   ],
   "params_identified": [
-   0.004997811434642874,
-   79.96383389609393,
-   2.204529015300454
+   0.00498536688538744,
+   80.0,
+   2.207939468832985
   ],
-  "rmse_identified": 0.0017662951174361823,
-  "seconds": 0.14141636807471514,
+  "rmse_fit": 0.00042327329098102595,
+  "seconds": 0.2176606790162623,
   "rmse_measured": 0.34715526990687406,
   "peel_measured": 1.92,
   "rmse_renormalized": 0.03453187915971323,
   "peel_renormalized": 2.44,
-  "peel_identified": 2.62
+  "rmse_identified": 0.019734291514983668,
+  "peel_identified": 2.42
  },
  {
   "dec": 5,
@@ -97,17 +101,18 @@
    2.16
   ],
   "params_identified": [
-   0.003999779650693614,
-   79.98018925692986,
-   2.163003902777916
+   0.003988490699992482,
+   80.0,
+   2.1650688931106234
   ],
-  "rmse_identified": 0.0011267225796895847,
-  "seconds": 0.16224188986234367,
+  "rmse_fit": 0.00027002727203975395,
+  "seconds": 0.26962964818812907,
   "rmse_measured": 0.31096378249434437,
   "peel_measured": 1.92,
   "rmse_renormalized": 0.022608830922279218,
   "peel_renormalized": 2.6,
-  "peel_identified": 2.68
+  "rmse_identified": 0.012400936972100603,
+  "peel_identified": 2.44
  },
  {
   "dec": 6,
@@ -119,17 +124,18 @@
    2.1333333333333333
   ],
   "params_identified": [
-   0.0033339051341559982,
-   79.98803235121176,
-   2.135473842280757
+   0.0033243237733565365,
+   80.0,
+   2.136848671321689
   ],
-  "rmse_identified": 0.000780379958640181,
-  "seconds": 0.21151196490973234,
+  "rmse_fit": 0.00018719530162423953,
+  "seconds": 0.29804178117774427,
   "rmse_measured": 0.2832497997311697,
   "peel_measured": 1.92,
   "rmse_renormalized": 0.015892216865028567,
   "peel_renormalized": 2.6,
-  "peel_identified": 2.76
+  "rmse_identified": 0.008535840491557667,
+  "peel_identified": 2.46
  },
  {
   "dec": 8,
@@ -141,17 +147,18 @@
    2.1
   ],
   "params_identified": [
-   0.002500933184719581,
-   79.99467685330342,
-   2.1012456030590414
+   0.002494200396969294,
+   80.0,
+   2.101974702106677
   ],
-  "rmse_identified": 0.0004373076366777097,
-  "seconds": 0.2460446481127292,
+  "rmse_fit": 0.00010511663642289555,
+  "seconds": 0.33226183499209583,
   "rmse_measured": 0.24245173232799738,
   "peel_measured": 1.9,
   "rmse_renormalized": 0.009043443996975944,
   "peel_renormalized": 2.6,
-  "peel_identified": 2.8
+  "rmse_identified": 0.0047659302879725215,
+  "peel_identified": 2.52
  },
  {
   "dec": 10,
@@ -163,17 +170,18 @@
    2.08
   ],
   "params_identified": [
-   0.002000863415465955,
-   79.99718326988996,
-   2.0808141570355705
+   0.0019960012598805375,
+   80.0,
+   2.0812630074757954
   ],
-  "rmse_identified": 0.0002791770884689597,
-  "seconds": 0.3136426820419729,
+  "rmse_fit": 6.722068017754894e-05,
+  "seconds": 0.4990157000720501,
   "rmse_measured": 0.21320802939872277,
   "peel_measured": 1.92,
   "rmse_renormalized": 0.005816634530763948,
   "peel_renormalized": 2.62,
-  "peel_identified": 2.82
+  "rmse_identified": 0.0030424334608400174,
+  "peel_identified": 2.6
  },
  {
   "dec": 12,
@@ -185,17 +193,18 @@
    2.066666666666667
   ],
   "params_identified": [
-   0.0016673976606664236,
-   79.99833071242564,
-   2.067240174215534
+   0.0016637550738377203,
+   80.0,
+   2.067543450314259
   ],
-  "rmse_identified": 0.00019353193154144987,
-  "seconds": 0.3384782241191715,
+  "rmse_fit": 4.666039855363466e-05,
+  "seconds": 0.5741345738060772,
   "rmse_measured": 0.19087737479300557,
   "peel_measured": 1.92,
   "rmse_renormalized": 0.004049329915243871,
   "peel_renormalized": 2.62,
-  "peel_identified": Infinity
+  "rmse_identified": 0.002110855759596028,
+  "peel_identified": 2.78
  },
  {
   "dec": 16,
@@ -207,16 +216,17 @@
    2.05
   ],
   "params_identified": [
-   0.0012505085614563027,
-   79.99927135367179,
-   2.0503284725856603
+   0.0012482663340024616,
+   80.0,
+   2.0504930189604003
   ],
-  "rmse_identified": 0.0001086118176712639,
-  "seconds": 0.41855693492107093,
+  "rmse_fit": 2.6234684007482673e-05,
+  "seconds": 0.6615207870490849,
   "rmse_measured": 0.15854301621343284,
   "peel_measured": 1.92,
   "rmse_renormalized": 0.0022826179787423986,
   "peel_renormalized": 2.7,
+  "rmse_identified": 0.0011870131707039362,
   "peel_identified": Infinity
  },
  {
@@ -229,16 +239,17 @@
    2.04
   ],
   "params_identified": [
-   0.0010003641857516262,
-   79.99961688666134,
-   2.0402125191358813
+   0.000998853207389193,
+   80.0,
+   2.0403154808625863
   ],
-  "rmse_identified": 6.94123564008548e-05,
-  "seconds": 0.48007402289658785,
+  "rmse_fit": 1.678658774152109e-05,
+  "seconds": 1.0777759139891714,
   "rmse_measured": 0.13595782746448615,
   "peel_measured": 1.92,
   "rmse_renormalized": 0.0014619991576051807,
   "peel_renormalized": 2.78,
+  "rmse_identified": 0.0007599029448355374,
   "peel_identified": Infinity
  },
  {
@@ -251,16 +262,17 @@
    2.032
   ],
   "params_identified": [
-   0.0008002535284290336,
-   79.99979857402771,
-   2.032137210499189
+   0.0007992468347923793,
+   80.0,
+   2.0322018866178952
   ],
-  "rmse_identified": 4.4372052485133117e-05,
-  "seconds": 0.5915868019219488,
+  "rmse_fit": 1.0741882588733273e-05,
+  "seconds": 1.0734126709867269,
   "rmse_measured": 0.11559678757508948,
   "peel_measured": 1.92,
   "rmse_renormalized": 0.0009359950791610029,
   "peel_renormalized": 2.8,
+  "rmse_identified": 0.0004865661457851902,
   "peel_identified": Infinity
  },
  {
@@ -273,16 +285,17 @@
    2.025
   ],
   "params_identified": [
-   0.0006251657939448968,
-   79.99990072118572,
-   2.0250843901493387
+   0.0006245299739876428,
+   80.0,
+   2.025123212738749
   ],
-  "rmse_identified": 2.705440503688867e-05,
-  "seconds": 0.6858309109229594,
+  "rmse_fit": 6.555645293027499e-06,
+  "seconds": 1.4732726190704852,
   "rmse_measured": 0.09567821320366615,
   "peel_measured": 1.94,
   "rmse_renormalized": 0.0005713387183912396,
   "peel_renormalized": 2.84,
+  "rmse_identified": 0.00029715021607159094,
   "peel_identified": Infinity
  },
  {
@@ -295,16 +308,17 @@
    2.02
   ],
   "params_identified": [
-   0.0005001113587972333,
-   79.99994762576334,
-   2.0200543117857817
+   0.0004996944361594226,
+   80.0,
+   2.0200788529364493
   ],
-  "rmse_identified": 1.730179259914891e-05,
-  "seconds": 1.0649420120753348,
+  "rmse_fit": 4.1953532057936174e-06,
+  "seconds": 1.3087001820094883,
   "rmse_measured": 0.07999127091576223,
   "peel_measured": 1.96,
   "rmse_renormalized": 0.0003656384217932574,
   "peel_renormalized": Infinity,
+  "rmse_identified": 0.00019027529165063762,
   "peel_identified": Infinity
  }
 ]

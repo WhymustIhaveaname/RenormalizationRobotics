@@ -161,9 +161,9 @@ Only the counterterms the derivation predicts are fitted: a rotor inertia on the
 
 **(a) Chaos turns a parameter error into a lost trajectory.** At 200 Hz the measured-parameter simulation follows the real free link for about 1.7 s and then leaves it for good, ending 40 rad — six turns — away. The renormalized one stays within a few radians through 2.5 s.
 
-**(b) 10× smaller error over the first second, with no fitting**, and the same at every resolution.
+**(b) 10× smaller error over the first second, with no fitting**, and the same at every resolution. The horizon over which the free link is still followed to within half a turn goes from 1.92 s to 2.44 s at 200 Hz.
 
-**Chaos also raises the price of stopping at first order.** In the single pendulum the analytic formula captured about 90% of the gap between measured and best-fit parameters; here it captures 44%, and fitting buys a further 20×. The residual is the second-order term in $h$, which the Lyapunov exponent amplifies. The formula is still 10× better than the measured parameters and still needs no real-world data, but a chaotic observable is where one would expect to need the next order.
+**The identified curve is scored out of sample**: it is fitted on 0.1 s across five drive frequencies, then measured on a single drive over ten times that window, exactly like the other two. On that footing **the formula with no data at all lands within a factor of 1.9 of the best fit** at every resolution from 150 Hz up — and at 50 Hz the fit is worse than doing nothing (1.56 rad against the measured parameters' 0.75), because 0.1 s at $h$ = 20 ms is five command steps and the minimum it finds does not survive the extrapolation. That factor of 1.9 is the second-order term in $h$, which the Lyapunov exponent amplifies: a chaotic observable is where one would expect to need the next order, and it costs less than a factor of two.
 
 The three pendulums side by side: [`exp2_double_pendulum/results/double_pendulum.mp4`](exp2_double_pendulum/results/double_pendulum.mp4) — real, measured, and renormalized overlaid at quarter speed.
 
@@ -333,9 +333,8 @@ Each step is one commit, reviewed before the next begins.
 - [x] Experiment 2, MuJoCo: the chaotic double pendulum
 - [x] Isaac, experiment 1: the single pendulum in PhysX
 - [x] MuJoCo Warp, experiment 1: the same pendulum on the GPU
-- [ ] MuJoCo Warp, experiment 2: the chaotic double pendulum
 
-MuJoCo Warp is MuJoCo reimplemented in NVIDIA Warp and is the solver Newton runs on, so it is
-the same discretization through a different implementation. If the counterterms carry over
-unchanged, that settles that they belong to the scheme and not to the code; if they do not,
-the difference says where the GPU rewrite departs from the C one.
+Three engines across two experiments is enough to make the point: the counterterms belong to
+the discretization, not to the engine, and the second experiment's lesson — the passive joint,
+and the operators that have to be left out of the fit — is the same mechanism whichever engine
+steps it. The remaining engine/experiment pairs would repeat an answer already measured.
