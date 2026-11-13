@@ -15,6 +15,13 @@ K_D^{\mathrm{sim}} = K_D^{\mathrm{real}} + \delta t \cdot K_P^{\mathrm{real}},
 J^{\mathrm{sim}} = J^{\mathrm{measured}} + \delta t \cdot K_D^{\mathrm{real}}.
 $$
 
+<p align="center">
+  <img src="exp1_pendulum/results/pendulum.gif" width="49%" alt="The real pendulum and two 200 Hz simulators of it">
+  <img src="exp2_double_pendulum/results/double_pendulum.gif" width="49%" alt="The real double pendulum and two 200 Hz simulators of it">
+</p>
+
+Left, the pendulum on its 2 Hz command; right, the double pendulum on its 4 Hz command, with only the upper link driven; both at quarter speed. Grey is the real motion, drawn behind two 200 Hz simulators: without renormalization (orange), that is with the measured parameters as they are, and with the renormalized parameters (blue). Without renormalization the rod swings up to 0.05 rad off the real one and the free link is a radian off by 0.54 s; renormalized, the rod stays on it and the free link holds until 1.93 s.
+
 ## Experiment 1: PD-controlled pendulum at finite simulation frequency
 
 ![Result](exp1_pendulum/results/fig_pendulum_mujoco.png)
@@ -129,8 +136,6 @@ Gravity breaks the overall scale symmetry $(J, K_P, K_D) \to \lambda(J, K_P, K_D
 - The effective parameters depend on the physics resolution alone, not on how the command was generated: identified on the 2 Hz command across five control frequencies from 10 to 200 Hz, they agree within 0.03% at $h$ = 1 ms and 0.2% at $h$ = 2.5 ms (`run_flow.py`).
 - The step size at which measured parameters match the renormalized accuracy is measured, not extrapolated: the sweep runs measured parameters down to $h$ = 0.04 ms (25 kHz).
 
-The pendulum itself: [`exp1_pendulum/results/pendulum.mp4`](exp1_pendulum/results/pendulum.mp4) (ground truth tracking the held command at each of the five drive frequencies in turn, half speed).
-
 ## Experiment 2: driven double pendulum, a chaotic system
 
 The same driven link now carries a second, unactuated link. That link is hinged 40% along its own length, so its mass centre sits 3.05 cm from its hinge and gravity barely restores it — the arrangement of a chaotic-pendulum desk toy. It tumbles 14.5 times in 3 s, and a $10^{-9}$ rad perturbation of the initial state grows to $6\times10^{-5}$ rad over the same window (Lyapunov exponent 3.1 /s).
@@ -172,8 +177,6 @@ The opposite signs in the figure are therefore **one counterterm read from two o
 **(b) The same error 11× faster, with no fitting.** What the measured parameters need 1000 Hz to reach, the renormalized ones reach at 89 Hz. Read vertically instead, the same two curves say 10× less error at the same rate. The saving is the number that gets paid for: the physics step is the inner loop of every RL rollout, and it is bought by a formula evaluated once. The horizon over which the free link is still followed to within half a turn goes from 1.92 s to 2.44 s at 200 Hz.
 
 **The identified curve is scored out of sample**: it is fitted on 0.1 s across five drive frequencies, then measured on a single drive over ten times that window, exactly like the other two. On that footing **the formula with no data at all lands within a factor of 1.9 of the best fit** at every resolution from 150 Hz up — and at 50 Hz the fit is worse than doing nothing (1.56 rad against the measured parameters' 0.75), because 0.1 s at $h$ = 20 ms is five command steps and the minimum it finds does not survive the extrapolation. That factor of 1.9 is the second-order term in $h$, which the Lyapunov exponent amplifies: a chaotic observable is where one would expect to need the next order, and it costs less than a factor of two.
-
-The three pendulums side by side: [`exp2_double_pendulum/results/double_pendulum.mp4`](exp2_double_pendulum/results/double_pendulum.mp4) — real, measured, and renormalized overlaid at quarter speed.
 
 ### System and method
 

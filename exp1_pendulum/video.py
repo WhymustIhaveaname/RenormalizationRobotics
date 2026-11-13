@@ -1,4 +1,10 @@
-"""Render the ground-truth pendulum for every drive frequency, one after another (0.5x speed)."""
+"""The README animation: the real pendulum and two 200 Hz simulators of it, overlaid.
+
+The command is the 2 Hz drive of the behaviour figure's panel (a).  One simulator is given the
+measured parameters and the other the renormalized ones, and both are drawn in front of the real
+pendulum, so a simulator that matches it lies on top of it rather than hiding inside it.  The
+camera is orthographic, so drawing the rods at different depths does not change their size.
+"""
 
 import os
 import sys
@@ -6,75 +12,96 @@ from pathlib import Path
 
 os.environ.setdefault("MUJOCO_GL", "egl")
 
-import imageio.v2 as imageio
 import mujoco
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from common import DRIVES, G, L, M, T_END, drive_amplitude, ground_truth, ref_sequence
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-F_CTRL, DEC = 50, 12  # ground truth sampled at 600 Hz
-FPS, SPEED = 60, 0.5
-SIZE = 720
+from common import F_REF, G, L, M, PARAM0, Sim, ground_truth, ref_sequence
+from figures import save_gif
+from run_gap import F_CTRL, renormalized
+
+ARM = "B"
+DEC = 4  # 200 Hz physics, the legged_gym default
+T_SHOW = 2.0  # s, the window of the behaviour figure's panel (a)
+FPS, SPEED = 25, 0.25
+WIDTH, HEIGHT = 560, 440
+VIEW_H, VIEW_Z = 0.62, -0.04  # m: height of the view and its centre
+# name, colour, rod radius, depth (the camera looks along +y, so smaller y is in front)
+TRACES = (("real", "0.80 0.79 0.77 1", 0.013, 0.04),
+          ("measured", "0.92 0.41 0.20 1", 0.006, 0.0),
+          ("renormalized", "0.16 0.47 0.84 1", 0.006, -0.04))
+LABELS = (("real", (82, 81, 78)), ("without renormalization", (235, 104, 52)),
+          ("renormalized", (42, 120, 214)))
+
+
+def rod(name, rgba, size, y):
+    return f"""
+    <body name="{name}" pos="0 {y} 0">
+      <joint name="{name}_hinge" type="hinge" axis="0 1 0"/>
+      <inertial pos="0 0 {-L / 2}" mass="{M}" diaginertia="1 1 1"/>
+      <geom type="capsule" fromto="0 0 0 0 0 {-L}" size="{size}" rgba="{rgba}"
+            contype="0" conaffinity="0"/>
+    </body>"""
+
 
 XML = f"""
 <mujoco>
   <compiler inertiafromgeom="false"/>
   <option gravity="0 0 -{G}"/>
-  <visual><global offwidth="{SIZE}" offheight="{SIZE}"/></visual>
+  <visual>
+    <global offwidth="{WIDTH}" offheight="{HEIGHT}"/>
+    <headlight ambient=".55 .55 .55" diffuse=".5 .5 .5" specular="0 0 0"/>
+  </visual>
   <asset>
-    <texture type="skybox" builtin="gradient" rgb1="1 1 1" rgb2=".86 .88 .91" width="256" height="256"/>
+    <texture type="skybox" builtin="flat" rgb1="1 1 1" rgb2="1 1 1" width="16" height="16"/>
   </asset>
   <worldbody>
-    <light pos="0 -1 1" dir="0 1 -1"/>
-    <geom type="cylinder" fromto="0 -0.03 0 0 0.03 0" size="0.012" rgba=".3 .3 .3 1"/>
-    <body name="rod">
-      <joint name="hinge" type="hinge" axis="0 1 0"/>
-      <inertial pos="0 0 {-L / 2}" mass="{M}" diaginertia="1 1 1"/>
-      <geom type="capsule" fromto="0 0 0 0 0 {-L}" size="0.008" rgba=".92 .41 .2 1"/>
-    </body>
-    <body name="target" mocap="true">
-      <geom type="capsule" fromto="0 0 0 0 0 {-L}" size="0.014" rgba=".16 .47 .84 .3"
-            contype="0" conaffinity="0"/>
-    </body>
+    <camera name="side" pos="0 -1 {VIEW_Z}" xyaxes="1 0 0 0 0 1" projection="orthographic"
+            fovy="{VIEW_H}"/>
+    <geom type="cylinder" fromto="0 -0.07 0 0 0.07 0" size="0.012" rgba=".3 .3 .3 1"
+          contype="0" conaffinity="0"/>
+    {"".join(rod(*trace) for trace in TRACES)}
   </worldbody>
 </mujoco>"""
 
 
+def trajectories():
+    """Theta at t = 0, h, 2h, ... for the real pendulum and the two simulators."""
+    refs = ref_sequence(F_CTRL, F_REF, t_end=T_SHOW)
+    h = 1.0 / (F_CTRL * DEC)
+    sim = Sim(ARM)
+    out = [ground_truth(refs, F_CTRL, DEC)]
+    out += [sim.rollout(refs, F_CTRL, DEC, *p) for p in (PARAM0, renormalized(ARM, h))]
+    return np.vstack([np.zeros((1, len(out))), np.stack(out, axis=1)])  # (sample, trace)
+
+
 def main(out):
+    traj = trajectories()
     model = mujoco.MjModel.from_xml_string(XML)
     data = mujoco.MjData(model)
-    stride = round(F_CTRL * DEC * SPEED / FPS)  # ground-truth samples per video frame
+    stride = round(F_CTRL * DEC * SPEED / FPS)  # physics steps per animation frame
+    font = ImageFont.load_default(size=19)
 
-    cam = mujoco.MjvCamera()
-    cam.lookat[:] = (0, 0, -0.08)
-    cam.distance, cam.azimuth, cam.elevation = 0.95, 90, 0
-    font = ImageFont.load_default(size=24)
-
-    with mujoco.Renderer(model, SIZE, SIZE) as renderer, \
-            imageio.get_writer(out, fps=FPS, codec="libx264", quality=8) as writer:
-        for f_ref in DRIVES:
-            refs = ref_sequence(F_CTRL, f_ref)
-            theta = np.concatenate([[0.0], ground_truth(refs, F_CTRL, DEC)])
-            for i in range(0, len(theta), stride):
-                t = i / (F_CTRL * DEC)
-                r = refs[min(int(t * F_CTRL), len(refs) - 1)]
-                data.qpos[0] = theta[i]
-                data.mocap_quat[0] = (np.cos(r / 2), 0, np.sin(r / 2), 0)
-                mujoco.mj_forward(model, data)
-                renderer.update_scene(data, camera=cam)
-                img = Image.fromarray(renderer.render())
-                draw = ImageDraw.Draw(img)
-                draw.text((20, 18), f"drive {f_ref:g} Hz, amplitude {drive_amplitude(f_ref):.2f} rad",
-                          fill=(11, 11, 11), font=font)
-                draw.text((20, 50), f"t = {t:4.2f} / {T_END:g} s   ({SPEED:g}x speed)",
-                          fill=(82, 81, 78), font=font)
-                draw.text((20, 82), "orange: real (continuous PD)", fill=(82, 81, 78), font=font)
-                draw.text((20, 112), "blue: command, 50 Hz held", fill=(82, 81, 78), font=font)
-                writer.append_data(np.asarray(img))
-            print(f"rendered drive {f_ref:g} Hz", flush=True)
+    frames = []
+    with mujoco.Renderer(model, HEIGHT, WIDTH) as renderer:
+        for i in range(0, len(traj), stride):
+            data.qpos[:] = traj[i]
+            mujoco.mj_forward(model, data)
+            renderer.update_scene(data, camera="side")
+            img = Image.fromarray(renderer.render())
+            draw = ImageDraw.Draw(img)
+            draw.text((16, 14), f"{F_CTRL * DEC} Hz physics, {F_REF:g} Hz command",
+                      fill=(11, 11, 11), font=font)
+            draw.text((16, 40), f"t = {i / (F_CTRL * DEC):4.2f} s   ({SPEED:g}x speed)",
+                      fill=(82, 81, 78), font=font)
+            for k, (label, rgb) in enumerate(LABELS):
+                draw.text((WIDTH - 16, 14 + 26 * k), label, fill=rgb, font=font, anchor="ra")
+            frames.append(np.asarray(img))
+    save_gif(frames, out, FPS)
     print(f"wrote {out}")
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else str(Path(__file__).parent / "results" / "pendulum.mp4"))
+    main(sys.argv[1] if len(sys.argv) > 1 else str(Path(__file__).parent / "results" / "pendulum.gif"))

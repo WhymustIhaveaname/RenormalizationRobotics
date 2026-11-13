@@ -7,10 +7,12 @@ flow_figure:       one column per scheme, one row per parameter, last row the po
                    against h^2.
 behaviour_figure:  two panels, the trajectory error against time and the RMSE of each
                    parameter set against simulation frequency.
+save_gif:          the README animations.
 """
 
 import matplotlib.pyplot as plt
 import numpy as np
+from PIL import Image
 
 FIT_COLOR = "#eb6834"
 MEASURED, RENORM, IDENT = "#eb6834", "#2a78d6", "#1baf7a"
@@ -241,3 +243,20 @@ def behaviour_figure(error_panel, gap_panel, out_paths, f_max):
     for p in out_paths:
         fig.savefig(p, dpi=200)
     plt.close(fig)
+
+
+def save_gif(frames, path, fps):
+    """A looping GIF whose frames share one palette, so that no colour flickers between them.
+
+    The palette is taken from a sample of the frames, and nothing is dithered: the scenes are a few
+    shaded rods on white, where dithering would only add noise and size.
+    """
+    images = [Image.fromarray(f) for f in frames]
+    sample = images[:: max(1, len(images) // 16)]
+    strip = Image.new("RGB", (sample[0].width, sample[0].height * len(sample)))
+    for k, im in enumerate(sample):
+        strip.paste(im, (0, k * im.height))
+    palette = strip.quantize(colors=128, method=Image.Quantize.MEDIANCUT)
+    images = [im.quantize(palette=palette, dither=Image.Dither.NONE) for im in images]
+    images[0].save(path, save_all=True, append_images=images[1:], duration=round(1000 / fps),
+                   loop=0)
