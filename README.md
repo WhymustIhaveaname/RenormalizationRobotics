@@ -1,6 +1,10 @@
 # Renormalization Robotics: Experiments
 
-Experiments for *Effective Parameters, Real Behavior: Renormalization for Robotics — From Infinite Electron Mass to Sim-to-Real Gap* ([arXiv:2607.24079](https://arxiv.org/abs/2607.24079)).
+Experiments for *Effective Parameters, Real Behavior: Renormalization for Robotics — From Infinite Electron Mass to Sim-to-Real Gap*, by Youran Sun, Jiaxuan Guo, Xingyu Ren, Chugang Yi and Haizhao Yang.
+
+[![arXiv](https://img.shields.io/badge/arXiv-2607.24079-b31b1b.svg)](https://arxiv.org/abs/2607.24079)
+[![PDF](https://img.shields.io/badge/PDF-b31b1b.svg)](https://arxiv.org/pdf/2607.24079)
+[![BibTeX](https://img.shields.io/badge/BibTeX-555555.svg)](#citation)
 
 The paper argues that simulator parameters should be treated as effective, resolution-dependent quantities $\theta^\star_{\mathrm{sim}}(a)$ rather than copies of measured values.
 Its analytic example is PD control at a finite simulation frequency, where a small effective delay $\delta t \propto 1/f$ shifts the parameters that make the simulator reproduce the real motion:
@@ -343,3 +347,16 @@ Three engines across two experiments is enough to make the point: the counterter
 the discretization, not to the engine, and the second experiment's lesson — the passive joint,
 and the operators that have to be left out of the fit — is the same mechanism whichever engine
 steps it. The remaining engine/experiment pairs would repeat an answer already measured.
+
+## Citation
+
+```bibtex
+@misc{sun2026effective,
+      title={Effective Parameters, Real Behavior: Renormalization for Robotics - From Infinite Electron Mass to Sim-to-Real Gap},
+      author={Youran Sun and Jiaxuan Guo and Xingyu Ren and Chugang Yi and Haizhao Yang},
+      year={2026},
+      eprint={2607.24079},
+      archivePrefix={arXiv},
+      url={https://arxiv.org/abs/2607.24079},
+}
+```
