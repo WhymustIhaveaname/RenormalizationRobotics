@@ -1,4 +1,4 @@
-# Renormalization Robotics: Experiments
+# R4R: Renormalization for Robotics
 
 Experiments for *Effective Parameters, Real Behavior: Renormalization for Robotics — From Infinite Electron Mass to Sim-to-Real Gap*, by Youran Sun, Jiaxuan Guo, Xingyu Ren, Chugang Yi and Haizhao Yang.
 
