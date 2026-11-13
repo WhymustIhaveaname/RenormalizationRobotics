@@ -21,15 +21,15 @@ $$
 
 ## Experiment 1: PD-controlled pendulum
 
+The pendulum is a uniform rod, 1 lb and 1 ft long, under gravity. A PD controller drives it with the ANYmal-C gains of [legged_gym](https://github.com/leggedrobotics/legged_gym): $K_P$ = 80 N m/rad, $K_D$ = 2 N m s/rad. The commands are sines from 0.5 to 8 Hz, held at the control rate. The real pendulum is the exact continuous-time solution. MuJoCo holds an explicit PD torque over each physics step, so $\delta t = h/2$. For each time step $h$, least squares finds the $(J, K_P, K_D)$ that best fits the real trajectory.
+
 ![Result](exp1_pendulum/results/fig_pendulum_mujoco.png)
 
-At 200 Hz, the error is 2.6e−2 rad with the measured parameters and 7.3e−4 rad with the first-order formula of the paper. At the same simulation frequency, the formula gives a 36× smaller error. For the same accuracy, it needs 36× less computation.
+At the same simulation frequency, the first-order formula of the paper gives a 36× smaller error. For the same accuracy, it needs 36× less computation.
 
 ### Flow of the effective parameters
 
 ![Flow](exp1_pendulum/results/fig1_flow_mujoco.png)
-
-The opposite sign of $J$ in C is a change of renormalization scheme: the behavior is the same.
 
 At second order, backward error analysis gives the effective parameters of A (upper sign) and C (lower sign):
 
@@ -37,15 +37,13 @@ $$J_e = J \mp \frac{h K_D}{2} - h^2 \frac{J K_P + K_D^2}{12 J}, \qquad K_{P,e} =
 
 The simulator needs the opposite shifts. For a linear plant, the three parameters absorb all of the $h^2$ error. Gravity leaves a remainder that no parameter can absorb. `derive_second_order.py` derives each step map and checks it numerically.
 
-### Setup
-
-The pendulum is a uniform rod, 1 lb and 1 ft long, under gravity. A PD controller drives it with the ANYmal-C gains of [legged_gym](https://github.com/leggedrobotics/legged_gym): $K_P$ = 80 N m/rad, $K_D$ = 2 N m s/rad. The commands are sines from 0.5 to 8 Hz, held at the control rate. The real pendulum is the exact continuous-time solution under the same held command.
-
-Scheme B holds the PD torque over each physics step. This delays the feedback by $h/2$ on average, so $\delta t = h/2$. For each time step $h$, least squares finds the $(J, K_P, K_D)$ that best fits the real trajectory.
-
 ## Experiment 2: chaotic double pendulum
 
-A free second link hangs from the end of the driven link. Its mass center is near its hinge, so it tumbles chaotically. The multi-body prediction of the paper is $\mathbf M^{\mathrm{sim}} = \mathbf M^{\mathrm{real}} + \delta t \cdot \mathbf K_D$. In MuJoCo, this is a rotor inertia (`armature`) on the driven joint.
+A second, free link hangs from the end of the pendulum of experiment 1. Its mass center is near its hinge, so it tumbles chaotically. The multi-body prediction of the paper is $\mathbf M^{\mathrm{sim}} = \mathbf M^{\mathrm{real}} + \delta t \cdot \mathbf K_D$. In MuJoCo, this is a rotor inertia (`armature`) on the driven joint.
+
+![Result](exp2_double_pendulum/results/fig_double_pendulum_mujoco.png)
+
+Chaos turns a small parameter error into a lost trajectory. At 200 Hz, the formula gives a 10× smaller error. For the same accuracy, it needs 11× less computation.
 
 ### Flow of the effective parameters
 
@@ -53,29 +51,19 @@ A free second link hangs from the end of the driven link. Its mass center is nea
 
 The theory gives $K_P$ no counterterm. A free $K_P$ moves the rotor inertia by up to 68%, and the error stays the same.
 
-The opposite signs of A and C are one counterterm in two coordinate systems. Their rotor inertias differ by $hK_D$ to 0.5%, and their errors agree to 12 digits.
-
-### Behaviour
-
-![Result](exp2_double_pendulum/results/fig_double_pendulum_mujoco.png)
-
-Chaos turns a small parameter error into a lost trajectory. At 200 Hz, the formula gives a 10× smaller error. For the same accuracy, it needs 11× less computation.
-
-### Setup
-
-Both links are the rod of experiment 1. The second link is hinged 40% along its length. The PD controller drives the first joint only.
-
 ## Isaac Sim: the single pendulum in PhysX
 
 This section repeats experiment 1 in Isaac Sim 5.1. PhysX has no RK4, so the three schemes change the solver and the PD force.
 
-![Isaac flow](exp1_pendulum/results/fig_flow_isaac_single.png)
-
-The PhysX source is open ([NVIDIA-Omniverse/PhysX](https://github.com/NVIDIA-Omniverse/PhysX)), so the theory comes from the solver code. TGS substeps the drive but applies gravity once per step. With this fact, the TGS drive matches the theory within 3%. The sign of the counterterm depends on the scheme.
-
 ![Isaac behaviour](exp1_pendulum/results/fig_behaviour_isaac_single.png)
 
 At 156 Hz, the formula gives a 22× smaller error. For the same accuracy, it needs 11× less computation.
+
+### Flow of the effective parameters
+
+![Isaac flow](exp1_pendulum/results/fig_flow_isaac_single.png)
+
+The PhysX source is open ([NVIDIA-Omniverse/PhysX](https://github.com/NVIDIA-Omniverse/PhysX)), so the theory comes from the solver code. TGS substeps the drive but applies gravity once per step. With this fact, the TGS drive matches the theory within 3%.
 
 ## MuJoCo Warp: the same pendulum on the GPU
 
